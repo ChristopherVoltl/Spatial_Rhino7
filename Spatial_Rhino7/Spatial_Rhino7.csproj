@@ -9,12 +9,16 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <PackageReference Include="Grasshopper" Version="7.36.23346.16351" IncludeAssets="compile;build" />
-  </ItemGroup>
-  
-  <ItemGroup>
+    <Reference Include="Grasshopper">
+      <HintPath>..\..\..\..\..\..\Program Files\Rhino 7\Plug-ins\Grasshopper\Grasshopper.dll</HintPath>
+      <Private>False</Private>
+      <EmbedInteropTypes></EmbedInteropTypes>
+      <SpecificVersion></SpecificVersion>
+    </Reference>
     <Reference Include="RhinoCommon">
-      <HintPath>..\..\..\..\.nuget\packages\rhinocommon\7.36.23346.16351\lib\net48\RhinoCommon.dll</HintPath>
+      <HintPath>..\..\..\..\..\..\Program Files\Rhino 7\System\RhinoCommon.dll</HintPath>
+      <Private>False</Private>
+      <EmbedInteropTypes></EmbedInteropTypes>
     </Reference>
     <Reference Include="SMT">
       <HintPath>..\..\..\..\Documents\SMT\Rhino 7\SMT.dll</HintPath>

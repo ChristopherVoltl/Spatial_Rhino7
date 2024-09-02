@@ -31,7 +31,7 @@ namespace Spatial_Rhino7
         /// </summary>
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
-            pManager.AddPlaneParameter("pathPlanes ", "pP", " an array of Planes", GH_ParamAccess.item);
+            pManager.AddPlaneParameter("pathPlanes ", "pP", " an array of Planes", GH_ParamAccess.list);
         }
 
         /// <summary>
@@ -50,7 +50,13 @@ namespace Spatial_Rhino7
         {
             // 1. Declare placeholder variables and assign initial invalid data.
             //    This way, if the input parameters fail to supply valid data, we know when to abort.
-            Rhino.Geometry.Plane[] pathPlanes = null;
+            var pathPlanes = new List<Plane>();
+ 
+
+            // 2. Retrieve input data.
+            if (!DA.GetDataList(0, pathPlanes)) { return; }
+
+
 
             //get the operation UI!
             int progIndex = smtPlugin.UIData.ProgramIndex;
@@ -71,12 +77,11 @@ namespace Spatial_Rhino7
                     opUI.PTP_Traverse = true;
 
                     //actionstates of the extrusion operation
-                    ActionState extrudeAct = opUI.SuperOperationRef.GetActionState("Extruder");
-                    SuperActionUI actionUI = opUI.ActionControls["Extruder"];
+                    ActionState extrudeAct = opUI.SuperOperationRef.GetActionState("Extrude");
+                    SuperActionUI actionUI = opUI.ActionControls["Extrude"];
                     actionUI.ActivationMode = ActivationStyle.PointData;
                     SuperEvent extrude = new SuperEvent(extrudeAct, 0.0, EventType.Activate, true);
                     SuperEvent stopExtrude = new SuperEvent(extrudeAct, 0.0, EventType.Deactivate, true);
-
 
                     //given an array of ordered and oriented planes for each spatial extrusion location
                     //build paths
@@ -90,7 +95,8 @@ namespace Spatial_Rhino7
                     Plane safe0 = approachSegment;//move up from approach  on World Z
 
                     //approach the start of the extrusion path
-                    SuperShape[] shapes = new SuperShape[pathPlanes.Length];
+
+                    SuperShape[] shapes = new SuperShape[pathPlanes.Count];
                     approachSegment.Translate(segmentStartZ * -50); //move negative into the path to account for thickess of the extrusion for bonding
 
 
@@ -101,10 +107,10 @@ namespace Spatial_Rhino7
                     Vector3d endY = new Vector3d(0, 1, 0);
                     Plane endPl = new Plane(endPt, endX, endY);
                     //we can use action states or events. try events first
-                    for (int i = 0; i < pathPlanes.Length; i++)
+                    for (int i = 0; i < pathPlanes.Count; i++)
 
                     {
-                        SMTPData[] pData = new SMTPData[4];
+                        SMTPData[] pData = new SMTPData[5];
 
                         //for each point, create a safe approach, start extrusion, extrude path, end extrusion. Then cycle back through the paths
                         Plane place = pathPlanes[i];
@@ -123,7 +129,7 @@ namespace Spatial_Rhino7
                         Guid guid = Guid.NewGuid();
                         smtPlugin.UserData[guid] = pData;
 
-                        shapes[i] = SuperShape.SuperShapeFactory(guid, null, DivisionStyle.PointData, ZOrientStyle.PointData, VectorStyle.ByParam, YOrientStyle.PointData, false, 0.0, Plane.WorldXY);
+                        shapes[i] = SuperShape.SuperShapeFactory(guid, null, DivisionStyle.PointData, ZOrientStyle.PointData, VectorStyle.ByParam, YOrientStyle.PointData, false, 0.0, Rhino.Geometry.Plane.WorldXY);
                         //smtPlugin.UserGeometry[guid] = partObjs[i].ExtrusionGeometry;
 
                         //DA.SetData(0, shapes[i]);
