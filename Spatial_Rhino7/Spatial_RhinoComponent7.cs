@@ -7,6 +7,9 @@ using SMT;
 using static SMT.SMTUtilities;
 using Rhino;
 using System.Linq;
+using Rhino.Commands;
+using System.Security.Cryptography;
+using Rhino.UI;
 
 namespace Spatial_Rhino7
 {
@@ -32,6 +35,8 @@ namespace Spatial_Rhino7
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddPlaneParameter("pathPlanes ", "pP", " an array of Planes", GH_ParamAccess.list);
+            pManager.AddCurveParameter("pathCurves", "pC", " an array of Curves", GH_ParamAccess.list);
+            pManager.AddNumberParameter("Parameter", "P", "Parameter to split the curves at (between 0 and 1)", GH_ParamAccess.item, 0.9);
         }
 
         /// <summary>
@@ -39,6 +44,8 @@ namespace Spatial_Rhino7
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
+            pManager.AddCurveParameter("Split Curves", "SC", "Resulting split curves", GH_ParamAccess.list);
+            pManager.AddPlaneParameter("Planes", "PL", "Planes created at division points", GH_ParamAccess.list);
         }
 
         /// <summary>
@@ -51,11 +58,57 @@ namespace Spatial_Rhino7
             // 1. Declare placeholder variables and assign initial invalid data.
             //    This way, if the input parameters fail to supply valid data, we know when to abort.
             var pathPlanes = new List<Plane>();
- 
+            var pathCurves = new List<Curve>();
+            double parameter = 0.5; // Default parameter
+
 
             // 2. Retrieve input data.
             if (!DA.GetDataList(0, pathPlanes)) { return; }
+            if (!DA.GetDataList(1, pathCurves)) { return; }
+            if (!DA.GetData(2, ref parameter)) return;
 
+            // 3. Abort on invalid inputs.
+            if (pathCurves == null)
+            {
+                RhinoApp.WriteLine("The selected object is not a curve.");
+            }
+
+            List<Curve> splitCurves = new List<Curve>();
+            List<Plane> planes = new List<Plane>();
+
+            foreach (Curve curve in pathCurves)
+            {
+                if (curve == null || !curve.IsValid) continue;
+
+                // Get the curve's length and split it at the specified parameter
+                
+                curve.Domain = new Interval(0, 1); // Normalize the parameter if it's between 0 and 1
+                    
+                Curve[] splitResult = curve.Split(parameter); // Split the curve at the normalized parameter
+                if (splitResult == null || splitResult.Length != 2) continue;
+
+                // Process each resulting curve after the split
+                foreach (Curve segment in splitResult)
+                {
+                    if (segment == null || !segment.IsValid) continue;
+
+                    // Divide the segment into 10 equal parts
+                    int divisionCount = 10;
+                    double[] divisionParams = segment.DivideByCount(divisionCount, true);
+                    if (divisionParams == null) continue;
+
+                    // Create planes at division points
+                    for (int i = 0; i < divisionParams.Length; i++)
+                    {
+                        Point3d pointOnSegment = segment.PointAt(divisionParams[i]);
+                        Plane plane = new Plane(pointOnSegment, Vector3d.ZAxis);
+                        planes.Add(plane);
+                    }
+
+                    // Add the segment curve to the list
+                    splitCurves.Add(segment);
+                }
+            }
 
 
             //get the operation UI!
@@ -80,50 +133,41 @@ namespace Spatial_Rhino7
                     ActionState extrudeAct = opUI.SuperOperationRef.GetActionState("Extrude");
                     SuperActionUI actionUI = opUI.ActionControls["Extrude"];
                     actionUI.ActivationMode = ActivationStyle.PointData;
+                    //extrude actionstates
                     SuperEvent extrude = new SuperEvent(extrudeAct, 0.0, EventType.Activate, true);
                     SuperEvent stopExtrude = new SuperEvent(extrudeAct, 0.0, EventType.Deactivate, true);
+                    //fan actionstates
+                    //SuperEvent fan = new SuperEvent(fanAct, 0.0, EventType.Activate, true);
+                    //SuperEvent stopFan = new SuperEvent(fanAct, 0.0, EventType.Deactivate, true);
+                    //nozzle cooling actionstates
+                    //SuperEvent nozzleCooling = new SuperEvent(nozzleAct, 0.0, EventType.Activate, true);
+                    //SuperEvent stopnozzleCooling = new SuperEvent(nozzleAct, 0.0, EventType.Deactivate, true);
+
 
                     //given an array of ordered and oriented planes for each spatial extrusion location
                     //build paths
-                    Point3d segmentStartPt = new Point3d(1375, -1892, 47);  //needs to be revised to be varible start of the path 
-                    Vector3d segmentStartZ = new Vector3d(0, 1, 0);
-                    Vector3d segmentStartX = new Vector3d(1, 0, 0);
-                    Vector3d segmentStartY = new Vector3d(0, 0, -1);
 
-                    Plane segmentStart = new Plane(segmentStartPt, segmentStartX, segmentStartY);
-                    Plane approachSegment = new Plane(segmentStart);//move along -Z of tool
-                    Plane safe0 = approachSegment;//move up from approach  on World Z
-
-                    //approach the start of the extrusion path
+                    //input curve and slicing parameters
 
                     SuperShape[] shapes = new SuperShape[pathPlanes.Count];
-                    approachSegment.Translate(segmentStartZ * -50); //move negative into the path to account for thickess of the extrusion for bonding
 
 
-                    //endPoint for all paths
-                    Point3d endPt = new Point3d(1236, 0, 1570); //needs to be revised to be varible end of the path 
-                    Vector3d endZ = new Vector3d(0, 0, -1);
-                    Vector3d endX = new Vector3d(-1, 0, 0);
-                    Vector3d endY = new Vector3d(0, 1, 0);
-                    Plane endPl = new Plane(endPt, endX, endY);
                     //we can use action states or events. try events first
                     for (int i = 0; i < pathPlanes.Count; i++)
 
                     {
-                        SMTPData[] pData = new SMTPData[5];
+
+                        SMTPData[] pData = new SMTPData[1];
 
                         //for each point, create a safe approach, start extrusion, extrude path, end extrusion. Then cycle back through the paths
-                        Plane place = pathPlanes[i];
-                        Plane approachPlace = place;//World Z from Place
-                        approachPlace.Translate(Vector3d.ZAxis * 100);
-                        Plane safe1 = approachPlace;
-                        safe1.Translate(Vector3d.ZAxis * 50);
+                        Plane path = pathPlanes[i];
+
                         //create the extrusion data
-                        pData[0] = new SMTPData(0, 0, 0, MoveType.Joint, safe0, 1.0f);
-                        pData[1] = new SMTPData(1, 1, 1, MoveType.Lin, approachSegment, 1.0f);
-                        pData[2] = new SMTPData(2, 2, 2, MoveType.Lin, segmentStart, extrude, 1.0f);
-                        pData[3] = new SMTPData(5, 5, 5, MoveType.Joint, endPl, stopExtrude, 1.0f);
-                        pData[4] = new SMTPData(6, 6, 6, MoveType.Joint, safe1, 1.0f);
+                        //pData[0] = new SMTPData(0, 0, 0, MoveType.Joint, safe0, 1.0f);
+                        //pData[1] = new SMTPData(1, 1, 1, MoveType.Lin, approachSegment, 1.0f);
+                        pData[0] = new SMTPData(0, 0, 0, MoveType.Lin, path, extrude, 1.0f);
+                        //pData[1] = new SMTPData(5, 5, 5, MoveType.Joint, place, stopExtrude, 1.0f);
+                        //pData[4] = new SMTPData(6, 6, 6, MoveType.Joint, safe1, 1.0f);
 
                         //finished with path
                         Guid guid = Guid.NewGuid();
@@ -153,7 +197,13 @@ namespace Spatial_Rhino7
             else
                 RhinoApp.WriteLine("You must select an Operation");
 
+            // 3. Set the outputs
+            DA.SetDataList(0, splitCurves);
+            DA.SetDataList(1, planes);
+
         }
+
+
 
         /// <summary>
         /// Provides an Icon for every component that will be visible in the User Interface.
