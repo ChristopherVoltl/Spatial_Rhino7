@@ -10,6 +10,7 @@ using System.Linq;
 using Rhino.Commands;
 using System.Security.Cryptography;
 using Rhino.UI;
+using System.Net;
 
 namespace Spatial_Rhino7
 {
@@ -50,7 +51,47 @@ namespace Spatial_Rhino7
         }
 
         /// <summary>
-        /// This is the method that actually does the work.
+        public class CurvePlaneDivider
+        {
+            /// <summary>
+            /// Divides a curve into equal parts and returns the planes at the division points.
+            /// </summary>
+            // <param name="curve">The curve to divide</param>
+            // <param name="numDivisions">The number of divisions (how many planes to create)</param>
+            /// <returns>A list of planes created at division points along the curve</returns>
+            public static List<Plane> DivideCurveIntoPlanes(Curve curve, int numDivisions)
+            {
+                List<Plane> planes = new List<Plane>();
+
+                if (curve == null || !curve.IsValid)
+                    return planes;
+
+                // Divide the curve into the specified number of parts
+                double[] divisionParams = curve.DivideByCount(numDivisions, true);
+
+                if (divisionParams == null || divisionParams.Length == 0)
+                    return planes;
+
+                // Create planes at each division point
+                for (int i = 0; i < divisionParams.Length; i++)
+                {
+                    // Get the point on the curve at the current parameter
+                    Point3d divisionPoint = curve.PointAt(divisionParams[i]);
+
+                    // Create a plane at the division point, with Z-axis normal to the curve's tangent
+                    Vector3d zVector = new Vector3d(0, 0, -1);
+                    Plane plane = new Plane(divisionPoint, zVector);
+
+
+                    // Add the plane to the list
+                    planes.Add(plane);
+                }
+
+                return planes;
+            }
+        }
+
+
         /// </summary>
         /// 
 
@@ -58,7 +99,7 @@ namespace Spatial_Rhino7
         {
             // 1. Declare placeholder variables and assign initial invalid data.
             //    This way, if the input parameters fail to supply valid data, we know when to abort.
-            var pathPlanes = new List<Plane>();
+            List<Plane> pathPlanes = new List<Plane>();
             var pathCurves = new List<Curve>();
             double parameter = 0.5; // Default parameter
 
@@ -75,8 +116,9 @@ namespace Spatial_Rhino7
             }
 
             List<Curve> splitCurves = new List<Curve>();
-            List<Plane> planes = new List<Plane>();
+            List<Curve> orderedCurves = new List<Curve>();
             List<Point3d> pData_points = new List<Point3d>();
+            List<Plane> allPlanes = new List<Plane>();
 
             foreach (Curve curve in pathCurves)
             {
@@ -93,20 +135,6 @@ namespace Spatial_Rhino7
                 foreach (Curve segment in splitResult)
                 {
                     if (segment == null || !segment.IsValid) continue;
-
-                    // Divide the segment into 10 equal parts
-                    int divisionCount = 10;
-                    double[] divisionParams = segment.DivideByCount(divisionCount, true);
-                    if (divisionParams == null) continue;
-
-                    // Create planes at division points
-                    for (int i = 0; i < divisionParams.Length; i++)
-                    {
-                        Point3d pointOnSegment = segment.PointAt(divisionParams[i]);
-                        Vector3d zVector = new Vector3d(0, 0, -1);
-                        Plane plane = new Plane(pointOnSegment, zVector);
-                        planes.Add(plane);
-                    }
 
                     // Add the segment curve to the list
                     splitCurves.Add(segment);
@@ -138,12 +166,16 @@ namespace Spatial_Rhino7
                     ActionState extrudeAct = opUI.SuperOperationRef.GetActionState("Extrude");
                     SuperActionUI actionUI = opUI.ActionControls["Extrude"];
                     actionUI.ActivationMode = ActivationStyle.PointData;
+
+                    ActionState nozzleCoolingAct = opUI.SuperOperationRef.GetActionState("NozzleCooling");
+                    SuperActionUI actionCoolingUI = opUI.ActionControls["NozzleCooling"];
+                    actionCoolingUI.ActivationMode = ActivationStyle.PointData;
                     //extrude actionstates
                     SuperEvent extrude = new SuperEvent(extrudeAct, 0.0, EventType.Activate, true);
                     SuperEvent stopExtrude = new SuperEvent(extrudeAct, 0.0, EventType.Deactivate, true);
                     //fan actionstates
-                    //SuperEvent fan = new SuperEvent(fanAct, 0.0, EventType.Activate, true);
-                    //SuperEvent stopFan = new SuperEvent(fanAct, 0.0, EventType.Deactivate, true);
+                    SuperEvent cool = new SuperEvent(nozzleCoolingAct, 0.0, EventType.Activate, true);
+                    SuperEvent stopCooling = new SuperEvent(nozzleCoolingAct, 0.0, EventType.Deactivate, true);
                     //nozzle cooling actionstates
                     //SuperEvent nozzleCooling = new SuperEvent(nozzleAct, 0.0, EventType.Activate, true);
                     //SuperEvent stopnozzleCooling = new SuperEvent(nozzleAct, 0.0, EventType.Deactivate, true);
@@ -154,85 +186,78 @@ namespace Spatial_Rhino7
 
                     //input curve and slicing parameters
 
-                    SuperShape[] shapes = new SuperShape[planes.Count];
+                    SuperShape[] shapes = new SuperShape[1];
 
                     //Assinging SMT functions based in the length of the curve
                     List<Curve> processedCurves = new List<Curve>();
-                    
+                    List<SMTPData> pDataList = new List<SMTPData>();
 
+                    SMTPData[] pData = new SMTPData[5];
+
+                    //loop through each path line or polyline 
+                    //for (int i = 0; i < pathCurves.Count; i++)
+                    //{
+                    //    if (pathCurves[i] == null || !pathCurves[i].IsValid) continue;
+
+
+                    //}
+                    //for each path, divide into planes
+
+
+                    //for each point, start extrusion, extrude path, end extrusion.
+
+                    Plane pathStart = pathPlanes[0];
+                    Plane pathEnd = pathPlanes[pathPlanes.Count - 1];
+                    //create the extrusion data
+                    pData[0] = new SMTPData(0, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
+                    pData[1] = new SMTPData(1, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+
+                    pDataList.Add(pData[0]);
+                    pDataList.Add(pData[1]);
                     // Loop through each curve in the list
-                    foreach (Curve curve in splitCurves)
+                    for (int i = 0; i < pathPlanes.Count; i++)
                     {
-                        if (curve == null || !curve.IsValid) continue;
-
-                        // Get the length of the current curve
-                        double curveLength = curve.GetLength();
-
-                        // Example: If the curve length is greater than the threshold, perform one operation
-                        if (curveLength > 10)
-                        {
-                            RhinoApp.WriteLine("greater");
-                            //we can use action states or events. try events first
-                            for (int i = 0; i < planes.Count; i++)
-
-                            {
-
-                                SMTPData[] pData = new SMTPData[1];
-
-                                //for each point, create a safe approach, start extrusion, extrude path, end extrusion. Then cycle back through the paths
-                                Plane path = planes[i];
-
-                                //create the extrusion data
-                                //pData[0] = new SMTPData(0, 0, 0, MoveType.Joint, safe0, 1.0f);
-                                //pData[1] = new SMTPData(1, 1, 1, MoveType.Lin, approachSegment, 1.0f);
-                                pData[0] = new SMTPData(0, 0, 0, MoveType.Lin, path, extrude, 1.0f);
-                                //pData[1] = new SMTPData(5, 5, 5, MoveType.Joint, place, stopExtrude, 1.0f);
-                                //pData[4] = new SMTPData(6, 6, 6, MoveType.Joint, safe1, 1.0f);
-
-                                //finished with path
-                                Guid guid = Guid.NewGuid();
-                                smtPlugin.UserData[guid] = pData;
-                                pData_points.Add(pData[0].Origin);
-
-                                shapes[i] = SuperShape.SuperShapeFactory(guid, null, DivisionStyle.PointData, ZOrientStyle.PointData, VectorStyle.ByParam, YOrientStyle.PointData, false, 0.0, Rhino.Geometry.Plane.WorldXY);
-                                //smtPlugin.UserGeometry[guid] = partObjs[i].ExtrusionGeometry;
+                        if (pathPlanes[i] == null || !pathPlanes[i].IsValid) continue;
 
 
-                            }
-                        }
-                        else
-                        {
-                            RhinoApp.WriteLine("less");
-                            //we can use action states or events. try events first
-                            for (int i = 0; i < planes.Count; i++)
+                        Plane path = pathPlanes[i];
 
-                            {
-
-                                SMTPData[] pData = new SMTPData[1];
-
-                                //for each point, create a safe approach, start extrusion, extrude path, end extrusion. Then cycle back through the paths
-                                Plane path = planes[i];
-
-                                //create the extrusion data
-                                //pData[0] = new SMTPData(0, 0, 0, MoveType.Joint, safe0, 1.0f);
-                                //pData[1] = new SMTPData(1, 1, 1, MoveType.Lin, approachSegment, 1.0f);
-                                pData[0] = new SMTPData(0, 0, 0, MoveType.Lin, path, extrude, 0.1f);
-                                //pData[1] = new SMTPData(5, 5, 5, MoveType.Joint, place, stopExtrude, 1.0f);
-                                //pData[4] = new SMTPData(6, 6, 6, MoveType.Joint, safe1, 1.0f);
-
-                                //finished with path
-                                Guid guid = Guid.NewGuid();
-                                smtPlugin.UserData[guid] = pData;
-
-                                shapes[i] = SuperShape.SuperShapeFactory(guid, null, DivisionStyle.PointData, ZOrientStyle.PointData, VectorStyle.ByParam, YOrientStyle.PointData, false, 0.0, Rhino.Geometry.Plane.WorldXY);
-                                //smtPlugin.UserGeometry[guid] = partObjs[i].ExtrusionGeometry;
+                        pData[2] = new SMTPData(i+2, 0, 0, MoveType.Lin, path, 1.0f);
 
 
-                            }
-                        }
+
+                        //pData[1] = new SMTPData(5, 5, 5, MoveType.Joint, place, stopExtrude, 1.0f);
+                        //pData[4] = new SMTPData(6, 6, 6, MoveType.Joint, safe1, 1.0f);
+
+                        //finished with path
+                        //Guid guid = Guid.NewGuid();
+                        //smtPlugin.UserData[guid] = pData;
+                        //pData_points.Add(pData[0].Origin);
+                        //allPlanes.Add(pathPlanes[i]);
+                        //pDataList.Add(pData[0]);
+                        pDataList.Add(pData[2]);
+                        
+
+
+                        //pData_points.Add(pData[0].Origin);
+                        //shapes[0] = SuperShape.SuperShapeFactory(guid, null, DivisionStyle.PointData, ZOrientStyle.PointData, VectorStyle.ByParam, YOrientStyle.PointData, false, 0.0, Rhino.Geometry.Plane.WorldXY);
+                        //smtPlugin.UserGeometry[guid] = partObjs[i].ExtrusionGeometry;
+
                     }
 
-                   
+                    pData[3] = new SMTPData(pathPlanes.Count + 1, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
+                    pData[4] = new SMTPData(pathPlanes.Count + 2, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
+
+
+                    pDataList.Add(pData[3]);
+                    pDataList.Add(pData[4]);
+
+                    //store all the pointdata and then instantiate the shape outside of the loop
+                    Guid guid = Guid.NewGuid();
+
+                    smtPlugin.UserData[guid] = pDataList.ToArray();
+                    shapes[0] = SuperShape.SuperShapeFactory(guid, null, DivisionStyle.PointData, ZOrientStyle.PointData, VectorStyle.ByParam, YOrientStyle.PointData, false, 0.0, Rhino.Geometry.Plane.WorldXY);
+
                     if (shapes.Length > 0)
                     {
                         var spbs = opUI.ReadFromGH(shapes);
@@ -252,8 +277,8 @@ namespace Spatial_Rhino7
                 RhinoApp.WriteLine("You must select an Operation");
 
             // 3. Set the outputs
-            DA.SetDataList(0, splitCurves);
-            DA.SetDataList(1, planes);
+            DA.SetDataList(0, orderedCurves);
+            DA.SetDataList(1, allPlanes);
             DA.SetDataList(2, pData_points);
 
         }
