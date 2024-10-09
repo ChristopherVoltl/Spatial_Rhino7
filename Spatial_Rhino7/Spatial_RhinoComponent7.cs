@@ -12,6 +12,8 @@ using System.Security.Cryptography;
 using Rhino.UI;
 using System.Net;
 using static Spatial_Rhino7.Spatial_RhinoComponent7.CurvePlaneDivider;
+using Compas.Robot.Link;
+using Rhino.DocObjects;
 
 namespace Spatial_Rhino7
 {
@@ -134,6 +136,67 @@ namespace Spatial_Rhino7
             }
         }
 
+
+
+            public class LineOrientation
+            {
+                public static List<Curve> ExplodeCurves(Curve curve)
+                {
+                    List<Curve> curves = new List<Curve>();
+
+                    if (curve == null || !curve.IsValid)
+                        return curves;
+
+                    // Explode the curve into segments
+                    Curve[] segments = curve.DuplicateSegments();
+
+                    if (segments == null || segments.Length == 0)
+                        return curves;
+
+                    // Add the segments to the list
+                    curves.AddRange(segments);
+
+                    return curves;
+                }
+
+            public static String OrientLine(Curve curve)
+                {
+
+                    ///Horizontal Line
+                    if (curve.PointAtStart.Z == curve.PointAtEnd.Z)
+                    {
+                        string lineDescriptor = "Horizontal";
+                        return lineDescriptor;
+                    }
+
+                    ///Vertial Line
+                    else if (curve.PointAtStart.Z < curve.PointAtEnd.Z & curve.PointAtStart.X == curve.PointAtEnd.X & curve.PointAtStart.Y == curve.PointAtEnd.Y)
+                    {
+                        string lineDescriptor = "Vertical";
+                        return lineDescriptor;
+                    }
+
+                    ///Angled Up Line
+                    else if (curve.PointAtStart.Z < curve.PointAtEnd.Z)
+                    {
+                        string lineDescriptor = "AngledUp";
+                        return lineDescriptor;
+                    }
+
+                    ///Angled Down Line
+                    else if (curve.PointAtStart.Z > curve.PointAtEnd.Z)
+                    {
+                        string lineDescriptor = "AngledDown";
+                        return lineDescriptor;
+                    }
+
+                    else
+                    {
+                        return null;
+                    }
+                }
+            }
+
 }
 
 
@@ -144,6 +207,7 @@ namespace Spatial_Rhino7
 
 protected override void SolveInstance(IGH_DataAccess DA)
         {
+            RhinoDoc doc = Rhino.RhinoDoc.ActiveDoc;
             // 1. Declare placeholder variables and assign initial invalid data.
             //    This way, if the input parameters fail to supply valid data, we know when to abort.
             List<Plane> pathPlanes = new List<Plane>();
@@ -192,6 +256,12 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     ActionState nozzleCoolingAct = opUI.SuperOperationRef.GetActionState("NozzleCooling");
                     SuperActionUI actionCoolingUI = opUI.ActionControls["NozzleCooling"];
                     actionCoolingUI.ActivationMode = ActivationStyle.PointData;
+
+                    ActionState PauseAct = opUI.SuperOperationRef.GetActionState("CycleWait");
+                    SuperActionUI actionPauseUI = opUI.ActionControls["CycleWait"];
+                    actionPauseUI.StartValue = "0.0";
+                    actionPauseUI.EndValue = "1.0";
+                    actionPauseUI.ActivationMode = ActivationStyle.PointData;
                     //extrude actionstates
                     SuperEvent extrude = new SuperEvent(extrudeAct, 0.0, EventType.Activate, true);
                     SuperEvent stopExtrude = new SuperEvent(extrudeAct, 0.0, EventType.Deactivate, true);
@@ -199,8 +269,8 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     SuperEvent cool = new SuperEvent(nozzleCoolingAct, 0.0, EventType.Activate, true);
                     SuperEvent stopCooling = new SuperEvent(nozzleCoolingAct, 0.0, EventType.Deactivate, true);
                     //nozzle cooling actionstates
-                    //SuperEvent nozzleCooling = new SuperEvent(nozzleAct, 0.0, EventType.Activate, true);
-                    //SuperEvent stopnozzleCooling = new SuperEvent(nozzleAct, 0.0, EventType.Deactivate, true);
+                    SuperEvent cycleWait = new SuperEvent(PauseAct, 0.0, EventType.Activate, true);
+                    SuperEvent stopcycleWait = new SuperEvent(PauseAct, 0.0, EventType.Deactivate, true);
 
 
                     //given an array of ordered and oriented planes for each spatial extrusion location
@@ -213,7 +283,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     //Assinging SMT functions based in the length of the curve
                     List<SMTPData> pDataList = new List<SMTPData>();
 
-                    SMTPData[] pData = new SMTPData[5];
+                    SMTPData[] pData = new SMTPData[7];
                     int counter = 0;
                     //loop through each path line or polyline 
                     for (int j = 0; j < pathCurves.Count; j++)
@@ -221,48 +291,147 @@ protected override void SolveInstance(IGH_DataAccess DA)
                         if (pathCurves[j] == null || !pathCurves[j].IsValid) continue;
 
                         //get the planes for each path
-                        List<Plane> crvPathPlanes = PolylinePlaneDivider.DividePolylineByLength(pathCurves[j], 10);                     
+                        //List<Plane> crvPathPlanes = PolylinePlaneDivider.DividePolylineByLength(pathCurves[j], 10);                     
+                        
+                        List<Curve> segments = LineOrientation.ExplodeCurves(pathCurves[j]);
 
+                        //if the polyline is comprised of more than one curve loop through each curve
+                        for (int i = 0; i < segments.Count; i++)
+                        {
+                            if (segments[i] == null || !segments[i].IsValid) continue;
 
+                            //get the planes for each path
+                            int numCrvPathPlanes = 10;
+                            List<Plane> crvPathPlanes = DivideCurveIntoPlanes(segments[i], numCrvPathPlanes);
+
+                            //for each point, start extrusion, extrude path, end extrusion.
+
+                            //for each curve define if the curve is angled up, down, horizontal or vertical
+                            string lineDescriptor = LineOrientation.OrientLine(segments[i]);
+
+                            //if the curve is angled up
+                            if (lineDescriptor == "AngledUp")
+                            {
+                                //get the first and last plane of the curve
+                                Plane pathStart = crvPathPlanes[0];
+                                Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                                //create the extrusion data
+                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
+                                pDataList.Add(pData[0]);
+                                counter++;
+                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+                                pDataList.Add(pData[1]);
+                                counter++;
+                                
+                                //define the circle motion for the start of the extrusion
+                                Circle circle = new Circle(pathStart, 3);
+                                
+                                //doc.Objects.AddCircle(circle);
+                                //doc.Views.Redraw();
+                                int numPlanes = 10;
+                                List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
+                                //loop through the circle planes
+                                for (int k = 0; k < circlePathPlanes.Count; k++)
+                                {
+                                    Plane cirPath = circlePathPlanes[k];
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.5f);
+                                    pDataList.Add(pData[2]);
+                                    allPlanes.Add(cirPath);
+                                    doc.Objects.AddPoint(cirPath.Origin);
+                                    doc.Views.Redraw();
+                                    counter++;
+                                }
+
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, 1.0f);
+                                counter++;
+
+                                // Loop through each plane in the list
+                                for (int l = 0; l < crvPathPlanes.Count; l++)
+                                {
+                                    if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
+
+                                    Plane path = crvPathPlanes[l];
+                                    //if the plane is the last plane of the curve
+                                    if (l > (80/100)*numCrvPathPlanes)
+                                        {
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.2f);
+                                    }
+                                    else
+                                    {
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.5f);
+                                    }
+
+                                    pDataList.Add(pData[4]);
+                                    allPlanes.Add(path);
+                                    counter++;
+                                }
+
+                                pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
+                                pDataList.Add(pData[5]);
+                                counter++;
+                                pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
+                                pDataList.Add(pData[6]);
+                                counter++;
+                                //add new point data to the list of points 
+                                //pData[1] = new SMTPData(counter + 1, 0, 0, MoveType.Lin, pathStart, stopcycleWait, 1.0f);
+                                //
+                                //counter++;
+                            }
+
+                            if (lineDescriptor == "AngledDown")
+                            {
+                                //get the first and last plane of the curve
+                                Plane pathStart = crvPathPlanes[0];
+                                Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                                //create the extrusion data
+                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
+                                pDataList.Add(pData[0]);
+                                counter++;
+                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+                                pDataList.Add(pData[1]);
+                                counter++;
+
+                                // Loop through each plane in the list
+                                for (int l = 0; l < crvPathPlanes.Count; l++)
+                                {
+                                    if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
+
+                                    Plane path = crvPathPlanes[l];
+                                    
+                                    pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 2.0f);
+                                
+                                    
+
+                                    pDataList.Add(pData[4]);
+                                    allPlanes.Add(path);
+                                    counter++;
+                                }
+
+                                pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
+                                pDataList.Add(pData[4]);
+                                counter++;
+                                pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
+                                pDataList.Add(pData[5]);
+                                counter++;
+                            }
                         //for each point, start extrusion, extrude path, end extrusion.
 
-                        Plane pathStart = crvPathPlanes[0];
-                        Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                        //Plane pathStart = crvPathPlanes[0];
+                        //Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
                         //create the extrusion data
-                        pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
-                        counter++;
-                        pData[1] = new SMTPData(counter + 1, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
-                        counter++;
+                        //pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
+                        //counter++;
+                        //pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+                        //counter++;
+                        //pData[1] = new SMTPData(counter + 1, 0, 0, MoveType.Lin, pathStart, cycleWait, 1.0f);
+                        //add new point data to the list of points 
+                        //pData[1] = new SMTPData(counter + 1, 0, 0, MoveType.Lin, pathStart, stopcycleWait, 1.0f);
+                        //
+                        //counter++;
 
-                        pDataList.Add(pData[0]);
-                        pDataList.Add(pData[1]);
 
-                        allPlanes.Add(pathStart);
-
-                        // Loop through each curve in the list
-                        for (int i = 0; i < crvPathPlanes.Count; i++)
-                        {
-                            if (crvPathPlanes[i] == null || !crvPathPlanes[i].IsValid) continue;
-
-                            Plane path = crvPathPlanes[i];
-
-                            pData[2] = new SMTPData(counter + 2, 0, 0, MoveType.Lin, path, 1.0f);
-
-                            pDataList.Add(pData[2]);
-
-                            allPlanes.Add(path);
-                            counter++;
-                        }
-
-                        pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
-                        counter++;
-                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
-                        counter++;
-
-                        pDataList.Add(pData[3]);
-                        pDataList.Add(pData[4]);
-
-                        allPlanes.Add(pathEnd);    
+                        
+   
                     }
 
                     //store all the pointdata and then instantiate the shape outside of the loop
