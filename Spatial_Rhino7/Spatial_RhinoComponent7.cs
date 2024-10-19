@@ -52,47 +52,108 @@ namespace Spatial_Rhino7
             pManager.AddPlaneParameter("Planes", "PL", "Planes created at division points", GH_ParamAccess.list);
             //pManager.AddPointParameter("SuperShape", "SS", "SuperShape for each plane", GH_ParamAccess.list);
         }
-
-        /// <summary>
-        public class CurvePlaneDivider
+        public class Quaternion_interpolation
         {
-            /// <summary>
-            /// Divides a curve into equal parts and returns the planes at the division points.
-            /// </summary>
-            // <param name="curve">The curve to divide</param>
-            // <param name="numDivisions">The number of divisions (how many planes to create)</param>
-            /// <returns>A list of planes created at division points along the curve</returns>
-            public static List<Plane> DivideCurveIntoPlanes(Curve curve, int numDivisions)
+            //Method to preform the quaternion interpolation for the curves
+            //To use in the function based on the curve orientation
+            public static List<Plane> interpolation(Curve curve, Plane planeStart, Plane planeEnd, int divisions)
             {
+                /// <summary>
+                // List to store the interpolated planes
                 List<Plane> planes = new List<Plane>();
 
-                if (curve == null || !curve.IsValid)
-                    return planes;
+                // Divide the curve into the specified number of divisions
+                double[] curveParams = curve.DivideByCount(divisions - 1, true);
 
-                // Divide the curve into the specified number of parts
-                double[] divisionParams = curve.DivideByCount(numDivisions, true);
-
-                if (divisionParams == null || divisionParams.Length == 0)
-                    return planes;
-
-                // Create planes at each division point
-                for (int i = 0; i < divisionParams.Length; i++)
+                // Loop through the division points to interpolate between start and end planes
+                for (int i = 0; i < curveParams.Length; i++)
                 {
                     // Get the point on the curve at the current parameter
-                    Point3d divisionPoint = curve.PointAt(divisionParams[i]);
+                    Point3d pointOnCurve = curve.PointAt(curveParams[i]);
+                    // Calculate the interpolation factor (t) between 0 and 1
+                    double t = (double)i / (curveParams.Length - 1);
 
-                    // Create a plane at the division point, with Z-axis normal to the curve's tangent
-                    Vector3d zVector = new Vector3d(0, 0, -1);
-                    Plane plane = new Plane(divisionPoint, zVector);
+                    // Interpolate the origin (position) of the plane
+                    Point3d origin = InterpolatePoint(planeStart.Origin, planeEnd.Origin, t);
 
+                    // Interpolate the X, Y, Z axes of the plane
+                    Vector3d xAxis = InterpolateVector(planeStart.XAxis, planeEnd.XAxis, t);
+                    Vector3d yAxis = InterpolateVector(planeStart.YAxis, planeEnd.YAxis, t);
+                    Vector3d zAxis = InterpolateVector(planeStart.ZAxis, planeEnd.ZAxis, t);
 
-                    // Add the plane to the list
-                    planes.Add(plane);
+                    // Construct a new plane with the interpolated origin and axes
+                    Plane newPlane = new Plane(origin, xAxis, yAxis);
+
+                    // Add the new plane to the list
+                    planes.Add(newPlane);
                 }
 
+                // Output the interpolated planes
                 return planes;
             }
-       
+        }
+
+            // Method to interpolate between two points
+            public static Point3d InterpolatePoint(Point3d p0, Point3d p1, double t)
+            {
+                return new Point3d(
+                  (1 - t) * p0.X + t * p1.X,
+                  (1 - t) * p0.Y + t * p1.Y,
+                  (1 - t) * p0.Z + t * p1.Z
+                  );
+            }
+
+            // Method to interpolate between two vectors
+            public static Vector3d InterpolateVector(Vector3d v0, Vector3d v1, double t)
+            {
+                return new Vector3d(
+                  (1 - t) * v0.X + t * v1.X,
+                  (1 - t) * v0.Y + t * v1.Y,
+                  (1 - t) * v0.Z + t * v1.Z
+                  );
+            }
+
+
+            public class CurvePlaneDivider
+            {
+                /// <summary>
+                /// Divides a curve into equal parts and returns the planes at the division points.
+                /// </summary>
+                // <param name="curve">The curve to divide</param>
+                // <param name="numDivisions">The number of divisions (how many planes to create)</param>
+                /// <returns>A list of planes created at division points along the curve</returns>
+                public static List<Plane> DivideCurveIntoPlanes(Curve curve, int numDivisions)
+                {
+                    List<Plane> planes = new List<Plane>();
+
+                    if (curve == null || !curve.IsValid)
+                        return planes;
+
+                    // Divide the curve into the specified number of parts
+                    double[] divisionParams = curve.DivideByCount(numDivisions, true);
+
+                    if (divisionParams == null || divisionParams.Length == 0)
+                        return planes;
+
+                    // Create planes at each division point
+                    for (int i = 0; i < divisionParams.Length; i++)
+                    {
+                        // Get the point on the curve at the current parameter
+                        Point3d divisionPoint = curve.PointAt(divisionParams[i]);
+
+                        // Create a plane at the division point, with Z-axis normal to the curve's tangent
+                        Vector3d zVector = new Vector3d(0, 0, -1);
+                        Plane plane = new Plane(divisionPoint, zVector);
+
+
+                        // Add the plane to the list
+                        planes.Add(plane);
+                    }
+
+                    return planes;
+                }
+            }
+     
 
 
         public class PolylinePlaneDivider
@@ -138,66 +199,66 @@ namespace Spatial_Rhino7
 
 
 
-            public class LineOrientation
+        public class LineOrientation
+        {
+            public static List<Curve> ExplodeCurves(Curve curve)
             {
-                public static List<Curve> ExplodeCurves(Curve curve)
-                {
-                    List<Curve> curves = new List<Curve>();
+                List<Curve> curves = new List<Curve>();
 
-                    if (curve == null || !curve.IsValid)
-                        return curves;
-
-                    // Explode the curve into segments
-                    Curve[] segments = curve.DuplicateSegments();
-
-                    if (segments == null || segments.Length == 0)
-                        return curves;
-
-                    // Add the segments to the list
-                    curves.AddRange(segments);
-
+                if (curve == null || !curve.IsValid)
                     return curves;
-                }
 
-            public static String OrientLine(Curve curve)
-                {
+                // Explode the curve into segments
+                Curve[] segments = curve.DuplicateSegments();
 
-                    ///Horizontal Line
-                    if (curve.PointAtStart.Z == curve.PointAtEnd.Z)
-                    {
-                        string lineDescriptor = "Horizontal";
-                        return lineDescriptor;
-                    }
+                if (segments == null || segments.Length == 0)
+                    return curves;
 
-                    ///Vertial Line
-                    else if (curve.PointAtStart.Z < curve.PointAtEnd.Z & curve.PointAtStart.X == curve.PointAtEnd.X & curve.PointAtStart.Y == curve.PointAtEnd.Y)
-                    {
-                        string lineDescriptor = "Vertical";
-                        return lineDescriptor;
-                    }
+                // Add the segments to the list
+                curves.AddRange(segments);
 
-                    ///Angled Up Line
-                    else if (curve.PointAtStart.Z < curve.PointAtEnd.Z)
-                    {
-                        string lineDescriptor = "AngledUp";
-                        return lineDescriptor;
-                    }
-
-                    ///Angled Down Line
-                    else if (curve.PointAtStart.Z > curve.PointAtEnd.Z)
-                    {
-                        string lineDescriptor = "AngledDown";
-                        return lineDescriptor;
-                    }
-
-                    else
-                    {
-                        return null;
-                    }
-                }
+                return curves;
             }
 
-}
+        public static String OrientLine(Curve curve)
+            {
+
+                ///Horizontal Line
+                if (curve.PointAtStart.Z == curve.PointAtEnd.Z)
+                {
+                    string lineDescriptor = "Horizontal";
+                    return lineDescriptor;
+                }
+
+                ///Vertial Line
+                else if (curve.PointAtStart.Z < curve.PointAtEnd.Z & curve.PointAtStart.X == curve.PointAtEnd.X & curve.PointAtStart.Y == curve.PointAtEnd.Y)
+                {
+                    string lineDescriptor = "Vertical";
+                    return lineDescriptor;
+                }
+
+                ///Angled Up Line
+                else if (curve.PointAtStart.Z < curve.PointAtEnd.Z)
+                {
+                    string lineDescriptor = "AngledUp";
+                    return lineDescriptor;
+                }
+
+                ///Angled Down Line
+                else if (curve.PointAtStart.Z > curve.PointAtEnd.Z)
+                {
+                    string lineDescriptor = "AngledDown";
+                    return lineDescriptor;
+                }
+
+                else
+                {
+                    return null;
+                }
+            }
+        }
+
+    
 
 
 
@@ -315,6 +376,19 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 //get the first and last plane of the curve
                                 Plane pathStart = crvPathPlanes[0];
                                 Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                                Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
+                                pathVector.Reverse();
+                                double angle = RhinoMath.ToRadians(60);
+                                pathVector.Rotate(angle, pathEnd.XAxis);
+                                
+                                Plane planeAtEnd = new Plane(pathEnd.Origin, pathEnd.XAxis, pathVector);
+
+                                //Get the plane orientation of the curve based on the start and end point
+                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], pathStart, planeAtEnd, numCrvPathPlanes);
+
+                                //blend the planes of the curve to create a smooth transition
+
+
                                 //create the extrusion data
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
                                 pDataList.Add(pData[0]);
@@ -346,19 +420,19 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 counter++;
 
                                 // Loop through each plane in the list
-                                for (int l = 0; l < crvPathPlanes.Count; l++)
+                                for (int l = 0; l < planeInterpolation.Count; l++)
                                 {
-                                    if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
-
-                                    Plane path = crvPathPlanes[l];
+                                    if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
+                                    double percentPath = (75.0 / 100.0) * numCrvPathPlanes;
+                                    Plane path = planeInterpolation[l];
                                     //if the plane is the last plane of the curve
-                                    if (l > (80 / 100) * numCrvPathPlanes)
+                                    if (l > percentPath)
                                     {
-                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.2f);
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
                                     }
                                     else
                                     {
-                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.5f);
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
                                     }
 
                                     pDataList.Add(pData[4]);
@@ -381,6 +455,16 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 //get the first and last plane of the curve
                                 Plane pathStart = crvPathPlanes[0];
                                 Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                                Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
+                                pathVector.Reverse();
+                                double angle = RhinoMath.ToRadians(-25);
+                                pathVector.Rotate(angle, pathEnd.XAxis);
+
+                                Plane planeAtEnd = new Plane(pathEnd.Origin, pathEnd.XAxis, pathVector);
+
+                                //Get the plane orientation of the curve based on the start and end point
+                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], pathStart, planeAtEnd, numCrvPathPlanes);
+
                                 //create the extrusion data
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
                                 pDataList.Add(pData[0]);
@@ -413,13 +497,13 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 pDataList.Add(pData[3]);
                                 counter++;
                                 // Loop through each plane in the list
-                                for (int l = 0; l < crvPathPlanes.Count; l++)
+                                for (int l = 0; l < planeInterpolation.Count; l++)
                                 {
-                                    if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
+                                    if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
 
-                                    Plane path = crvPathPlanes[l];
+                                    Plane path = planeInterpolation[l];
 
-                                    pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 2.0f);
+                                    pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 2.0f);
 
 
 
