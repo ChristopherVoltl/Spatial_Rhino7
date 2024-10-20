@@ -416,7 +416,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     counter++;
                                 }
 
-                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, 1.0f);
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
                                 counter++;
 
                                 // Loop through each plane in the list
@@ -428,11 +428,11 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     //if the plane is the last plane of the curve
                                     if (l > percentPath)
                                     {
-                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.1f);
                                     }
                                     else
                                     {
-                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
                                     }
 
                                     pDataList.Add(pData[4]);
@@ -457,10 +457,10 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
                                 Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
                                 pathVector.Reverse();
-                                double angle = RhinoMath.ToRadians(-25);
+                                double angle = RhinoMath.ToRadians(-5);
                                 pathVector.Rotate(angle, pathEnd.XAxis);
 
-                                Plane planeAtEnd = new Plane(pathEnd.Origin, pathEnd.XAxis, pathVector);
+                                Plane planeAtEnd = new Plane(pathStart.Origin, pathStart.XAxis, pathVector);
 
                                 //Get the plane orientation of the curve based on the start and end point
                                 List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], pathStart, planeAtEnd, numCrvPathPlanes);
@@ -476,6 +476,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                                 //define the circle motion for the start of the extrusion
                                 Circle circle = new Circle(pathStart, 3);
+                                circle.Rotate(RhinoMath.ToRadians(90), pathStart.ZAxis, pathStart.Origin);
 
                                 //doc.Objects.AddCircle(circle);
                                 //doc.Views.Redraw();
@@ -485,7 +486,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 for (int k = 0; k < circlePathPlanes.Count; k++)
                                 {
                                     Plane cirPath = circlePathPlanes[k];
-                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.25f);
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 1.0f);
                                     pDataList.Add(pData[2]);
                                     allPlanes.Add(cirPath);
                                     doc.Objects.AddPoint(cirPath.Origin);
@@ -493,7 +494,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     counter++;
                                 }
 
-                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, 1.0f);
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
                                 pDataList.Add(pData[3]);
                                 counter++;
                                 // Loop through each plane in the list
@@ -503,7 +504,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                                     Plane path = planeInterpolation[l];
 
-                                    pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 2.0f);
+                                    pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 1.0f);
 
 
 
@@ -522,7 +523,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
                                 pDataList.Add(pData[0]);
                                 counter++;
-                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 1.0f);
                                 pDataList.Add(pData[1]);
                                 counter++;
 
