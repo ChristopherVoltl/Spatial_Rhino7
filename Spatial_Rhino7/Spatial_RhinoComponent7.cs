@@ -14,6 +14,7 @@ using System.Net;
 using static Spatial_Rhino7.Spatial_RhinoComponent7.CurvePlaneDivider;
 using Compas.Robot.Link;
 using Rhino.DocObjects;
+using System.IO;
 
 namespace Spatial_Rhino7
 {
@@ -28,6 +29,8 @@ namespace Spatial_Rhino7
         /// </summary>
         /// 
         static SuperMatterToolsPlugin smtPlugin => SuperMatterToolsPlugin.Instance;
+        
+
 
         public Spatial_RhinoComponent7() : base("SpatialPrintingComponent03", "SPC", "Spatial printing sorting component", "FGAM", "SpatialPrinting")
         {
@@ -41,6 +44,8 @@ namespace Spatial_Rhino7
             //pManager.AddPlaneParameter("pathPlanes ", "pP", " an array of Planes", GH_ParamAccess.list);
             pManager.AddCurveParameter("pathCurves", "pC", " an array of Curves", GH_ParamAccess.list);
             pManager.AddNumberParameter("Parameter", "P", "Parameter to split the curves at (between 0 and 1)", GH_ParamAccess.item, 0.9);
+            pManager.AddNumberParameter("Angled Down POC", "AD P", "Point on curve where angled rotation stops", GH_ParamAccess.item, 0.9);
+
         }
 
         /// <summary>
@@ -83,7 +88,7 @@ namespace Spatial_Rhino7
 
                     // Construct a new plane with the interpolated origin and axes
                     Plane newPlane = new Plane(origin, xAxis, yAxis);
-
+                    
                     // Add the new plane to the list
                     planes.Add(newPlane);
                 }
@@ -197,8 +202,6 @@ namespace Spatial_Rhino7
             }
         }
 
-
-
         public class LineOrientation
         {
             public static List<Curve> ExplodeCurves(Curve curve)
@@ -257,10 +260,6 @@ namespace Spatial_Rhino7
                 }
             }
         }
-
-    
-
-
 
 
 /// </summary>
@@ -344,7 +343,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     //Assinging SMT functions based in the length of the curve
                     List<SMTPData> pDataList = new List<SMTPData>();
 
-                    SMTPData[] pData = new SMTPData[7];
+                    SMTPData[] pData = new SMTPData[5];
                     int counter = 0;
                     //loop through each path line or polyline 
                     for (int j = 0; j < pathCurves.Count; j++)
@@ -380,11 +379,12 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 pathVector.Reverse();
                                 double angle = RhinoMath.ToRadians(60);
                                 pathVector.Rotate(angle, pathEnd.XAxis);
-                                
+
+                                Plane planeAtStart = new Plane(pathStart.Origin, pathStart.XAxis, pathVector);
                                 Plane planeAtEnd = new Plane(pathEnd.Origin, pathEnd.XAxis, pathVector);
 
                                 //Get the plane orientation of the curve based on the start and end point
-                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], pathStart, planeAtEnd, numCrvPathPlanes);
+                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
 
                                 //blend the planes of the curve to create a smooth transition
 
@@ -393,7 +393,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
                                 pDataList.Add(pData[0]);
                                 counter++;
-                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 1.0f);
                                 pDataList.Add(pData[1]);
                                 counter++;
 
@@ -416,19 +416,20 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     counter++;
                                 }
 
-                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
+                                pDataList.Add(pData[3]);
                                 counter++;
 
                                 // Loop through each plane in the list
                                 for (int l = 0; l < planeInterpolation.Count; l++)
                                 {
                                     if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
-                                    double percentPath = (75.0 / 100.0) * numCrvPathPlanes;
+                                    double percentPath = (80.0 / 100.0) * numCrvPathPlanes;
                                     Plane path = planeInterpolation[l];
                                     //if the plane is the last plane of the curve
                                     if (l > percentPath)
                                     {
-                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.1f);
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.05f);
                                     }
                                     else
                                     {
@@ -460,43 +461,20 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 double angle = RhinoMath.ToRadians(-5);
                                 pathVector.Rotate(angle, pathEnd.XAxis);
 
-                                Plane planeAtEnd = new Plane(pathStart.Origin, pathStart.XAxis, pathVector);
+                                Plane planeAtStart = new Plane(pathStart.Origin, pathStart.XAxis, pathVector);
+                                Plane planeAtEnd = new Plane(pathEnd.Origin, pathEnd.XAxis, pathVector);
 
                                 //Get the plane orientation of the curve based on the start and end point
-                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], pathStart, planeAtEnd, numCrvPathPlanes);
+                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
 
                                 //create the extrusion data
-                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
+                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, extrude, 1.0f);
                                 pDataList.Add(pData[0]);
                                 counter++;
-                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
+                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
                                 pDataList.Add(pData[1]);
                                 counter++;
 
-
-                                //define the circle motion for the start of the extrusion
-                                Circle circle = new Circle(pathStart, 3);
-                                circle.Rotate(RhinoMath.ToRadians(90), pathStart.ZAxis, pathStart.Origin);
-
-                                //doc.Objects.AddCircle(circle);
-                                //doc.Views.Redraw();
-                                int numPlanes = 10;
-                                List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
-                                //loop through the circle planes
-                                for (int k = 0; k < circlePathPlanes.Count; k++)
-                                {
-                                    Plane cirPath = circlePathPlanes[k];
-                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 1.0f);
-                                    pDataList.Add(pData[2]);
-                                    allPlanes.Add(cirPath);
-                                    doc.Objects.AddPoint(cirPath.Origin);
-                                    doc.Views.Redraw();
-                                    counter++;
-                                }
-
-                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
-                                pDataList.Add(pData[3]);
-                                counter++;
                                 // Loop through each plane in the list
                                 for (int l = 0; l < planeInterpolation.Count; l++)
                                 {
@@ -504,11 +482,11 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                                     Plane path = planeInterpolation[l];
 
-                                    pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 1.0f);
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
 
 
 
-                                    pDataList.Add(pData[4]);
+                                    pDataList.Add(pData[2]);
                                     allPlanes.Add(path);
                                     counter++;
                                 }
@@ -540,6 +518,13 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     allPlanes.Add(path);
                                     counter++;
                                 }
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
+                                pDataList.Add(pData[3]);
+                                counter++;
+                                pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, cool, 1.0f);
+                                pDataList.Add(pData[4]);
+                                counter++;
+
                             }
 
                             if (lineDescriptor == "Vertical")
