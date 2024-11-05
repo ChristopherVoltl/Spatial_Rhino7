@@ -47,26 +47,31 @@ namespace Spatial_Rhino7
         public class PlaneGenerator
         {
             // Method to generate a plane at a specific parameter along the curve
-            public Plane GeneratePlaneAt(Curve curve, double t, bool alignToCurve = true)
+            public Plane GeneratePlaneAt(Curve curve, double t)
             {
                 if (!curve.IsValid || !curve.Domain.IncludesParameter(t))
                     throw new ArgumentException("Invalid parameter on the curve");
 
-                // Find the point and tangent at parameter t
-                Point3d point = curve.PointAt(t);
-                Vector3d tangent = curve.TangentAt(t);
+                //calculate the angle of the curve
+                Point3d startPt = curve.PointAtStart;
+                Point3d endPt = curve.PointAtEnd;
+                Vector3d vec = endPt - startPt;
+                Point3d projected_endPt = new Point3d (endPt.X, endPt.Y, startPt.Z);
+                Vector3d vec_projected = projected_endPt - startPt;
+                Vector3d vecX = vec_projected;
+                double radianX = RhinoMath.ToRadians(90);
+                vecX.Rotate(radianX, Vector3d.ZAxis);
+                double angle = Vector3d.VectorAngle(vec, vec_projected);
+                double angleDegrees = RhinoMath.ToDegrees(angle);
 
-                // World-aligned or curve-aligned plane
-                Plane plane = alignToCurve
-                    ? new Plane(point, tangent)
-                    : new Plane(point, Vector3d.XAxis, Vector3d.YAxis);
 
-                // Set the Z-axis perpendicular to the curve direction if curve-aligned
-                if (alignToCurve)
-                {
-                    plane.ZAxis = tangent;
-                    plane.XAxis = Vector3d.CrossProduct(plane.YAxis, plane.ZAxis);
-                }
+
+                // Find the point at parameter t
+                Point3d point = curve.PointAt(t);          
+                Plane plane = new Plane(point, Vector3d.XAxis, vec_projected);
+                plane.Rotate(angle, Vector3d.XAxis);
+
+                
 
                 return plane;
             }
@@ -85,17 +90,17 @@ namespace Spatial_Rhino7
             }
 
             // Method to get planes at key points (start, end, and arbitrary points) on the curve
-            public List<Plane> GenerateKeyPlanes(Curve curve, double t1, double t2, bool alignToCurve = true)
+            public List<Plane> GenerateKeyPlanes(Curve curve, double t1, double t2)
             {
                 List<Plane> planes = new List<Plane>();
 
                 // Generate planes at the start and end of the curve
-                planes.Add(GeneratePlaneAt(curve, curve.Domain.Min, alignToCurve));
-                planes.Add(GeneratePlaneAt(curve, curve.Domain.Max, alignToCurve));
+                planes.Add(GeneratePlaneAt(curve, curve.Domain.Min));
+                planes.Add(GeneratePlaneAt(curve, curve.Domain.Max));
 
                 // Generate planes at custom parameters t1 and t2
-                planes.Add(GeneratePlaneAt(curve, t1, alignToCurve));
-                planes.Add(GeneratePlaneAt(curve, t2, alignToCurve));
+                planes.Add(GeneratePlaneAt(curve, t1));
+                planes.Add(GeneratePlaneAt(curve, t2));
 
                 return planes;
             }
@@ -132,8 +137,8 @@ namespace Spatial_Rhino7
                 // Rotate the planes around their X-axis
                 for (int i = 0; i < keyPlanes.Count; i++)
                 {
-                    Plane rotatedPlane = PlaneGenerator.RotatePlaneAroundX(keyPlanes[i], 25.0, maxRotationAngle);
-                    planes.Add(rotatedPlane);
+
+                    planes.Add(keyPlanes[i]);
                 }
             }
 

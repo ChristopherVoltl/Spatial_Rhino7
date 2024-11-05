@@ -225,9 +225,9 @@ namespace Spatial_Rhino7
 
         public static String OrientLine(Curve curve)
             {
-
+                double tolerance = 1.0;
                 ///Horizontal Line
-                if (curve.PointAtStart.Z == curve.PointAtEnd.Z)
+                if (Math.Abs(curve.PointAtStart.Z - curve.PointAtEnd.Z) <= tolerance)
                 {
                     string lineDescriptor = "Horizontal";
                     return lineDescriptor;
@@ -375,19 +375,33 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 //get the first and last plane of the curve
                                 Plane pathStart = crvPathPlanes[0];
                                 Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
-                                Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
-                                pathVector.Reverse();
-                                double angle = RhinoMath.ToRadians(60);
-                                pathVector.Rotate(angle, pathEnd.XAxis);
+                                double t = 0.5;
+                                Curve curve = segments[i];
+                                curve.Domain = new Interval(0, 1);
+                                Point3d pointOnCurve = curve.PointAt(t);
+                                Vector3d tangent = curve.TangentAt(t);
 
-                                Plane planeAtStart = new Plane(pathStart.Origin, pathStart.XAxis, pathVector);
-                                Plane planeAtEnd = new Plane(pathEnd.Origin, pathEnd.XAxis, pathVector);
+                                //Define the Y-axis along the direction of the curve
+                                Vector3d yAxis = tangent;
+                                yAxis.Unitize();
+
+                                //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
+                                Vector3d zAxis = new Vector3d(0, 0, -1);
+
+
+                                //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
+                                Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
+                                xAxis.Unitize();
+
+                                //Construct the plane with the calculated axes
+                                Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
+
+                                Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
+                                Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
 
                                 //Get the plane orientation of the curve based on the start and end point
                                 List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
-
-                                //blend the planes of the curve to create a smooth transition
-
+                                
 
                                 //create the extrusion data
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
@@ -461,8 +475,28 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 double angle = RhinoMath.ToRadians(-5);
                                 pathVector.Rotate(angle, pathEnd.XAxis);
 
-                                Plane planeAtStart = new Plane(pathStart.Origin, pathStart.XAxis, pathVector);
-                                Plane planeAtEnd = new Plane(pathEnd.Origin, pathEnd.XAxis, pathVector);
+                                double t = 0.5;
+                                Curve curve = segments[i];
+                                curve.Domain = new Interval(0, 1);
+                                Point3d pointOnCurve = curve.PointAt(t);
+                                Vector3d tangent = curve.TangentAt(t);
+
+                                //Define the Y-axis along the direction of the curve
+                                Vector3d yAxis = tangent;
+                                yAxis.Unitize();
+
+                                //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
+                                Vector3d zAxis = new Vector3d(0, 0, -1);
+
+
+                                //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
+                                Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
+                                xAxis.Unitize();
+
+                                //Construct the plane with the calculated axes
+                                Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
+                                Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
+                                Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
 
                                 //Get the plane orientation of the curve based on the start and end point
                                 List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
@@ -497,6 +531,33 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 //get the first and last plane of the curve
                                 Plane pathStart = crvPathPlanes[0];
                                 Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                                Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
+                                pathVector.Reverse();
+                                double angle = RhinoMath.ToRadians(-5);
+                                pathVector.Rotate(angle, pathEnd.XAxis);
+
+                                double t = 0.5;
+                                Curve curve = segments[i];
+                                curve.Domain = new Interval(0, 1);
+                                Point3d pointOnCurve = curve.PointAt(t);
+                                Vector3d tangent = curve.TangentAt(t);
+
+                                //Define the Y-axis along the direction of the curve
+                                Vector3d yAxis = tangent;
+                                yAxis.Unitize();
+
+                                //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
+                                Vector3d zAxis = new Vector3d(0, 0, -1);
+
+
+                                //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
+                                Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
+                                xAxis.Unitize();
+
+                                //Construct the plane with the calculated axes
+                                Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
+
+
                                 //create the extrusion data
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
                                 pDataList.Add(pData[0]);
