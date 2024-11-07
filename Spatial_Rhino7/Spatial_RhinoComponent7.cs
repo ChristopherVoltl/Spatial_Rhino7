@@ -332,6 +332,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     SuperEvent cycleWait = new SuperEvent(PauseAct, 0.0, EventType.Activate, true);
                     SuperEvent stopcycleWait = new SuperEvent(PauseAct, 0.0, EventType.Deactivate, true);
 
+                    SMT.AxisState st = new SMT.AxisState();
+                    
+
 
                     //given an array of ordered and oriented planes for each spatial extrusion location
                     //build paths
@@ -380,18 +383,44 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 curve.Domain = new Interval(0, 1);
                                 Point3d pointOnCurve = curve.PointAt(t);
                                 Vector3d tangent = curve.TangentAt(t);
+                                Vector3d zAxis = pathStart.Origin - pathEnd.Origin;
 
-                                //Define the Y-axis along the direction of the curve
-                                Vector3d yAxis = tangent;
+                                zAxis.Unitize();
+
+                                // Step 2: Calculate the angle between Z-axis and world Z-axis in degrees
+                                Point3d projectedEndPt = new Point3d(pathEnd.Origin.X, pathEnd.Origin.Y, pathStart.Origin.Z);
+                                Vector3d crvVec = pathEnd.Origin - pathStart.Origin;
+                                Vector3d projectedCrvVec = projectedEndPt - pathStart.Origin;
+
+                                double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec) * (180.0 / Math.PI);
+
+                                // Step 3: If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
+                                if (angleToWorldZ < 45.0)
+                                {
+                                    // Rotate zAxis to be at a 45-degree angle to the world Z-axis
+                                    double rotationAngle =  angleToWorldZ - 55;  // Calculate the amount to rotate
+                                    Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(zAxis, Vector3d.ZAxis), pathStart.Origin);
+                                    zAxis.Transform(rotation);
+                                }
+
+                                // Step 2: Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
+                                Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, zAxis);
+                                xAxis.Unitize();
+
+                                // If the X-axis is zero (e.g., if Z-axis is vertical), use the world Y-axis as a fallback
+                                if (xAxis.IsZero)
+                                {
+                                    xAxis = Vector3d.CrossProduct(Vector3d.YAxis, zAxis);
+                                    xAxis.Unitize();
+                                }
+
+                                // Step 3: Rotate X-axis by 180 degrees around Z-axis by negating it
+                                xAxis = -xAxis;
+
+                                // Step 4: Calculate the Y-axis to complete the orthogonal system
+                                Vector3d yAxis = Vector3d.CrossProduct(zAxis, xAxis);
                                 yAxis.Unitize();
 
-                                //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
-                                Vector3d zAxis = new Vector3d(0, 0, -1);
-
-
-                                //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
-                                Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
-                                xAxis.Unitize();
 
                                 //Construct the plane with the calculated axes
                                 Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
@@ -412,7 +441,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 counter++;
 
                                 //define the circle motion for the start of the extrusion
-                                Circle circle = new Circle(pathStart, 3);
+                                Circle circle = new Circle(pathStart, 4);
+
+
 
                                 //doc.Objects.AddCircle(circle);
                                 //doc.Views.Redraw();
@@ -422,7 +453,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 for (int k = 0; k < circlePathPlanes.Count; k++)
                                 {
                                     Plane cirPath = circlePathPlanes[k];
-                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.5f);
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.25f);
                                     pDataList.Add(pData[2]);
                                     allPlanes.Add(cirPath);
                                     doc.Objects.AddPoint(cirPath.Origin);
@@ -434,6 +465,8 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 pDataList.Add(pData[3]);
                                 counter++;
 
+
+
                                 // Loop through each plane in the list
                                 for (int l = 0; l < planeInterpolation.Count; l++)
                                 {
@@ -443,7 +476,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     //if the plane is the last plane of the curve
                                     if (l > percentPath)
                                     {
-                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.05f);
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.1f);
                                     }
                                     else
                                     {
@@ -609,9 +642,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     Plane path = crvPathPlanes[l];
 
                                     pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.5f);
-                                    SMT.AxisState st = new SMT.AxisState();
-                                    st.Value = 1.5;
-                                    pData[2].AxisStates["E5"] = st;
+                                    
 
                                     pDataList.Add(pData[2]);
                                     allPlanes.Add(path);
