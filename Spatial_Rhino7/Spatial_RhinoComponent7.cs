@@ -286,6 +286,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                 RhinoApp.WriteLine("The selected object is not a curve.");
             }
 
+    
             List<Point3d> pData_points = new List<Point3d>();
             List<Plane> allPlanes = new List<Plane>();
 
@@ -394,7 +395,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                                 double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec) * (180.0 / Math.PI);
 
-                                // Step 3: If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
+                                //If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
                                 if (angleToWorldZ < 45.0)
                                 {
                                     // Rotate zAxis to be at a 45-degree angle to the world Z-axis
@@ -403,7 +404,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     zAxis.Transform(rotation);
                                 }
 
-                                // Step 2: Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
+                                //Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
                                 Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, zAxis);
                                 xAxis.Unitize();
 
@@ -414,19 +415,25 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     xAxis.Unitize();
                                 }
 
-                                // Step 3: Rotate X-axis by 180 degrees around Z-axis by negating it
-                                xAxis = -xAxis;
+                                //Rotate X-axis by 180 degrees around Z-axis by negating it
+                                double xAxisDif = Vector3d.VectorAngle(xAxis, Vector3d.XAxis) * (180.0 / Math.PI);
 
-                                // Step 4: Calculate the Y-axis to complete the orthogonal system
+                                if (Math.Abs(xAxisDif) < 90)
+                                {
+                                    xAxis = -xAxis;
+                                }
+
+                                //Calculate the Y-axis to complete the orthogonal system
                                 Vector3d yAxis = Vector3d.CrossProduct(zAxis, xAxis);
                                 yAxis.Unitize();
 
 
                                 //Construct the plane with the calculated axes
                                 Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
-
-                                Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
                                 Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
+                                Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
+
+
 
                                 //Get the plane orientation of the curve based on the start and end point
                                 List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
@@ -512,19 +519,49 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 Curve curve = segments[i];
                                 curve.Domain = new Interval(0, 1);
                                 Point3d pointOnCurve = curve.PointAt(t);
-                                Vector3d tangent = curve.TangentAt(t);
+                                Vector3d yAxis = curve.TangentAt(t);
 
-                                //Define the Y-axis along the direction of the curve
-                                Vector3d yAxis = tangent;
                                 yAxis.Unitize();
 
-                                //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
-                                Vector3d zAxis = new Vector3d(0, 0, -1);
+                                // Step 2: Calculate the angle between Z-axis and world Z-axis in degrees
+                                Point3d projectedEndPt = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, pathEnd.Origin.Z); 
+                                Vector3d crvVec = pathStart.Origin - pathEnd.Origin; // Vector from end to start
+                                Vector3d projectedCrvVec = projectedEndPt - pathEnd.Origin;
 
+                                double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec); // Angle between the curve and the projected curve
+                                angleToWorldZ = RhinoMath.ToDegrees(angleToWorldZ);
+                                //If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
+                                if (angleToWorldZ > 45.0)
+                                {
+                                    // Rotate zAxis to be at a 45-degree angle to the world Z-axis
+                                    double rotationAngle = angleToWorldZ - 35;  // Calculate the amount to rotate
+                                    Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(yAxis, Vector3d.ZAxis), pathStart.Origin);
+                                    yAxis.Transform(rotation);
+                                }
 
-                                //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
-                                Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
+                                //Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
+                                Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, yAxis);
                                 xAxis.Unitize();
+
+                                // If the X-axis is zero (e.g., if Z-axis is vertical), use the world Y-axis as a fallback
+                                if (xAxis.IsZero)
+                                {
+                                    xAxis = Vector3d.CrossProduct(Vector3d.YAxis, yAxis);
+                                    xAxis.Unitize();
+                                }
+
+                                //Rotate X-axis by 180 degrees around Z-axis by negating it
+                                double xAxisDif = Vector3d.VectorAngle(xAxis, Vector3d.XAxis) * (180.0 / Math.PI);
+
+                                if (Math.Abs(xAxisDif) < 90)
+                                {
+                                    xAxis = -xAxis;
+                                    yAxis = -yAxis;
+                                }
+
+                                //Calculate the Y-axis to complete the orthogonal system
+                                Vector3d zAxis = Vector3d.CrossProduct(yAxis, xAxis);
+                                zAxis.Unitize();
 
                                 //Construct the plane with the calculated axes
                                 Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
