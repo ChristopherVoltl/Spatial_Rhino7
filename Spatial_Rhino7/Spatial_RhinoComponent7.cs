@@ -333,8 +333,11 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     SuperEvent cycleWait = new SuperEvent(PauseAct, 0.0, EventType.Activate, true);
                     SuperEvent stopcycleWait = new SuperEvent(PauseAct, 0.0, EventType.Deactivate, true);
 
-                    SMT.AxisState st = new SMT.AxisState();
+   
+                    AxisState axisStateE5 = new AxisState();
                     
+                    
+
 
 
                     //given an array of ordered and oriented planes for each spatial extrusion location
@@ -346,6 +349,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                     //Assinging SMT functions based in the length of the curve
                     List<SMTPData> pDataList = new List<SMTPData>();
+
+                    double E5Val = 1.8;
+
 
                     SMTPData[] pData = new SMTPData[5];
                     int counter = 0;
@@ -363,6 +369,12 @@ protected override void SolveInstance(IGH_DataAccess DA)
                         for (int i = 0; i < segments.Count; i++)
                         {
                             if (segments[i] == null || !segments[i].IsValid) continue;
+
+                            //this will be used to make all the curves AnglesUp 
+                            //if (segments[i].PointAtStart.Z > segments[i].PointAtEnd.Z)
+                            //{
+                            //    segments[i].Reverse();
+                            //}
 
                             //get the planes for each path
                             int numCrvPathPlanes = 10;
@@ -437,13 +449,17 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                                 //Get the plane orientation of the curve based on the start and end point
                                 List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
-                                
+
 
                                 //create the extrusion data
+                                
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
+                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
                                 pDataList.Add(pData[0]);
                                 counter++;
+                                
                                 pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 1.0f);
+                                pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
                                 pDataList.Add(pData[1]);
                                 counter++;
 
@@ -460,15 +476,22 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 for (int k = 0; k < circlePathPlanes.Count; k++)
                                 {
                                     Plane cirPath = circlePathPlanes[k];
+                                    
                                     pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.25f);
+                                    E5Val = 1.5;
+                                    axisStateE5.Value = E5Val;
+                                    pData[2].AxisStates["E5"] = axisStateE5;
+
                                     pDataList.Add(pData[2]);
                                     allPlanes.Add(cirPath);
                                     doc.Objects.AddPoint(cirPath.Origin);
                                     doc.Views.Redraw();
                                     counter++;
                                 }
+                                
 
                                 pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
+                                pData[3].AxisStates["E5"] = new SMT.AxisState(1.0);
                                 pDataList.Add(pData[3]);
                                 counter++;
 
@@ -483,13 +506,20 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     //if the plane is the last plane of the curve
                                     if (l > percentPath)
                                     {
+                                        
                                         pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.1f);
+                                        E5Val = 1.0;
+                                        axisStateE5.Value = E5Val;
                                     }
                                     else
                                     {
+                                        
                                         pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
+                                        E5Val = 1.4;
+                                        axisStateE5.Value = E5Val;
+                                        
                                     }
-
+                                    //pData[4].AxisStates["E5"] = axisStateE5;
                                     pDataList.Add(pData[4]);
                                     allPlanes.Add(path);
                                     counter++;
@@ -572,11 +602,18 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
 
                                 //create the extrusion data
+                                
                                 pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, extrude, 1.0f);
+                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
                                 pDataList.Add(pData[0]);
                                 counter++;
+                                
                                 pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
+                                pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
                                 pDataList.Add(pData[1]);
+                                E5Val = 1.5;
+                                axisStateE5.Value = E5Val;
+                                pData[1].AxisStates["E5"] = axisStateE5;
                                 counter++;
 
                                 // Loop through each plane in the list
@@ -585,9 +622,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
 
                                     Plane path = planeInterpolation[l];
-
+                                    
                                     pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
-
+                                    
 
 
                                     pDataList.Add(pData[2]);
