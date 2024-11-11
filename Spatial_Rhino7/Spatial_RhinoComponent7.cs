@@ -333,8 +333,11 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     SuperEvent cycleWait = new SuperEvent(PauseAct, 0.0, EventType.Activate, true);
                     SuperEvent stopcycleWait = new SuperEvent(PauseAct, 0.0, EventType.Deactivate, true);
 
-                    SMT.AxisState st = new SMT.AxisState();
+   
+                    AxisState axisStateE5 = new AxisState();
                     
+                    
+
 
 
                     //given an array of ordered and oriented planes for each spatial extrusion location
@@ -346,6 +349,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                     //Assinging SMT functions based in the length of the curve
                     List<SMTPData> pDataList = new List<SMTPData>();
+
+                    double E5Val = 1.8;
+
 
                     SMTPData[] pData = new SMTPData[5];
                     int counter = 0;
@@ -445,7 +451,8 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 counter++;
                                 pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 1.0f);
                                 pDataList.Add(pData[1]);
-                                counter++;
+
+  
 
                                 //define the circle motion for the start of the extrusion
                                 Circle circle = new Circle(pathStart, 4);
@@ -461,12 +468,18 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 {
                                     Plane cirPath = circlePathPlanes[k];
                                     pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.25f);
+                                    E5Val = 1.5;
+                                    axisStateE5.Value = E5Val;
+                                    pData[2].AxisStates["E5"] = axisStateE5;
+
                                     pDataList.Add(pData[2]);
                                     allPlanes.Add(cirPath);
-                                    doc.Objects.AddPoint(cirPath.Origin);
-                                    doc.Views.Redraw();
+                                    //doc.Objects.AddPoint(cirPath.Origin);
+                                    //doc.Views.Redraw();
+
                                     counter++;
                                 }
+                                
 
                                 pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
                                 pDataList.Add(pData[3]);
@@ -484,13 +497,19 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     if (l > percentPath)
                                     {
                                         pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.1f);
+                                        E5Val = 1.0;
+                                        axisStateE5.Value = E5Val;
                                     }
                                     else
                                     {
                                         pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
+                                        E5Val = 1.4;
+                                        axisStateE5.Value = E5Val;
+                                        
                                     }
-
+                                    //pData[4].AxisStates["E5"] = axisStateE5;
                                     pDataList.Add(pData[4]);
+                                    
                                     allPlanes.Add(path);
                                     counter++;
                                 }
@@ -577,6 +596,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 counter++;
                                 pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
                                 pDataList.Add(pData[1]);
+                                E5Val = 1.5;
+                                axisStateE5.Value = E5Val;
+                                pData[1].AxisStates["E5"] = axisStateE5;
                                 counter++;
 
                                 // Loop through each plane in the list
@@ -587,6 +609,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     Plane path = planeInterpolation[l];
 
                                     pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
+                                    
 
 
 
