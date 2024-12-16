@@ -6,6 +6,10 @@ using Grasshopper.Kernel;
 using Rhino.Geometry;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
+using System.Linq;
+using Rhino.Render.ChangeQueue;
+using System.Runtime.Remoting.Messaging;
+using System.Collections;
 
 namespace Spatial_Rhino7.Spatial_Printing_Components
 {
@@ -38,6 +42,12 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
             pManager.AddPointParameter("Graph_Nodes", "GN", "Graph: Nodes", GH_ParamAccess.tree);
             pManager.AddPointParameter("Graph_Node_Connections", "GNC", "Graph: Graph Node Connectivity", GH_ParamAccess.tree);
             pManager.AddIntegerParameter("Graph_Node_Connections_Length", "GNCL", "Graph: Graph Node Connectivity Count Per Node", GH_ParamAccess.tree);
+            pManager.AddIntegerParameter("Graph_Node_Weights", "GNW", "Graph: Weight of the edge for sorting", GH_ParamAccess.tree);
+            pManager.AddIntegerParameter("Sorted_Graph_Node_Weights", "SGNW", "Graph: Sorted weight of the edge for sorting", GH_ParamAccess.tree);
+            pManager.AddLineParameter("Sorted_Graph_Lines", "SGL", "Graph:  Sorted lines", GH_ParamAccess.tree);
+
+
+
 
         }
 
@@ -144,69 +154,240 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                 return weights;
             }
 
-            private static double FindIntersectionVerticalAtStart(Line line, List<Line> graphLines)
+            private static double FindIntersectionVerticalAtStart(Line inputLine, List<Line> graphLines)
             {
-                // Intersection logic for vertical lines at the start
-                return 0.1; // Placeholder logic
-            }
-
-            private static double FindIntersectionVerticalAtEnd(Line line, List<Line> graphLines)
-            {
-                // Intersection logic for vertical lines at the end
-                return 0.05; // Placeholder logic
-            }
-
-            private static double FindIntersectionAngledAtStart(Line line, List<Line> graphLines)
-            {
-                // Intersection logic for angled lines at the start
-                return -0.15; // Placeholder logic
-            }
-
-            private static double FindIntersectionAngledAtEnd(Line line, List<Line> graphLines)
-            {
-                // Intersection logic for angled lines at the end
-                return 0.21; // Placeholder logic
-            }
-
-            private static double VerticalNoAngleAtTop(Line inputLine, List<Line> graphLines)
-            {
-                // Logic for no-angle vertical lines
                 Point3d startPoint = inputLine.From;
                 Point3d endPoint = inputLine.To;
 
-                double averageZInputLine = (startPoint.Z + endPoint.Z) / 2;
                 double weightVertical = 0;
 
-                // Ensure line direction is correct
+                // Flip the input line if start Z > end Z
                 if (startPoint.Z > endPoint.Z)
                 {
-                    inputLine = new Line(endPoint, startPoint);
+                    inputLine.Flip();
                 }
-
-                int count = 0;
 
                 foreach (var line in graphLines)
                 {
+                    // Check if line is nearly horizontal
                     if (Math.Abs(line.To.Z - line.From.Z) <= 0.02)
                     {
-                        // Horizontal Line
                         weightVertical = 0;
                     }
+                    // If both points of the line are identical
                     else if (line.From.X == line.To.X && line.From.Y == line.To.Y)
                     {
-                        // Vertical Line with no angle
                         weightVertical = 0;
                     }
                     else
+                    {
+                        // Flip the line if From.Z > To.Z
+                        if (line.From.Z > line.To.Z)
+                        {
+                            line.Flip();
+                        }
+
+                        // Check for intersection at the start point
+                        if (Math.Round(line.From.X, 2) == Math.Round(startPoint.X, 2) &&
+                            Math.Round(line.From.Y, 2) == Math.Round(startPoint.Y, 2) &&
+                            Math.Round(line.From.Z, 2) == Math.Round(startPoint.Z, 2))
+                        {
+                            weightVertical = 0.1;
+                            return weightVertical;
+                        }
+                    }
+                }
+
+                return weightVertical;
+            }
+
+            private static double FindIntersectionVerticalAtEnd(Line inputLine, List<Line> graphLines)
+            {
+                // Find the intersection for a vertical line
+                Point3d startPoint = inputLine.From;
+                Point3d endPoint = inputLine.To;
+
+                double weightVertical = 0;
+
+                // Flip the input line if the start point's Z is greater than the end point's Z
+                if (startPoint.Z > endPoint.Z)
+                {
+                    inputLine.Flip();
+                }
+
+                foreach (var line in graphLines)
+                {
+                    // Check if the input line is approximately horizontal
+                    if (Math.Abs(endPoint.Z - startPoint.Z) <= 0.02)
+                    {
+                        weightVertical = 0;
+                    }
+                    // Check if the graph line is vertical
+                    else if (line.From.X == line.To.X && line.From.Y == line.To.Y)
+                    {
+                        weightVertical = 0;
+                    }
+                    else
+                    {
+                        // Flip the graph line if necessary
+                        if (line.From.Z > line.To.Z)
+                        {
+                            line.Flip();
+                        }
+
+                        // Intersection at the endpoint
+                        if (Math.Round(line.To.X, 2) == Math.Round(endPoint.X, 2) &&
+                            Math.Round(line.To.Y, 2) == Math.Round(endPoint.Y, 2) &&
+                            Math.Round(line.To.Z, 2) == Math.Round(endPoint.Z, 2))
+                        {
+                            weightVertical = 0.05;
+                            return weightVertical;
+                        }
+                    }
+                }
+
+                return weightVertical;
+            }
+
+            private static double FindIntersectionAngledAtStart(Line inputLine, List<Line> graphLines)
+            {
+                // Find the intersection for a vertical line, assuming inputLine is vertical
+                Point3d startPoint = inputLine.From;
+                Point3d endPoint = inputLine.To;
+
+                double weightAngled = 0;
+
+                // Flip the input line if the start point's Z is greater than the end point's Z
+                if (startPoint.Z > endPoint.Z)
+                {
+                    inputLine.Flip();
+                }
+
+                foreach (var line in graphLines)
+                {
+                    // Check if the input line is approximately horizontal
+                    if (Math.Abs(endPoint.Z - startPoint.Z) <= 0.02)
+                    {
+                        weightAngled = 0;
+                    }
+                    // Check if the graph line is vertical
+                    else if (Math.Round(line.From.X, 2) == Math.Round(line.To.X, 2) &&
+                             Math.Round(line.From.Y, 2) == Math.Round(line.To.Y, 2))
+                    {
+                        // Flip the graph line if necessary
+                        if (line.From.Z > line.To.Z)
+                        {
+                            line.Flip();
+                        }
+
+                        // Check for intersection at the start point
+                        if (Math.Round(line.From.X, 2) == Math.Round(startPoint.X, 2) &&
+                            Math.Round(line.From.Y, 2) == Math.Round(startPoint.Y, 2) &&
+                            Math.Round(line.From.Z, 2) == Math.Round(startPoint.Z, 2))
+                        {
+                            weightAngled = -0.15;
+                            return weightAngled;
+                        }
+                    }
+                    else
+                    {
+                        weightAngled = 0;
+                    }
+                }
+
+                return weightAngled;
+            }
+
+            private static double FindIntersectionAngledAtEnd(Line inputLine, List<Line> graphLines)
+            {
+                // Find the intersection for a vertical line
+                Point3d startPoint = inputLine.From;
+                Point3d endPoint = inputLine.To;
+
+                double weightAngled = 0;
+
+                // Flip the input line if the start point's Z is greater than the end point's Z
+                if (startPoint.Z > endPoint.Z)
+                {
+                    inputLine.Flip();
+                }
+
+                foreach (var line in graphLines)
+                {
+                    // Check if the line is approximately horizontal
+                    if (Math.Abs(line.To.Z - line.From.Z) <= 0.02)
+                    {
+                        weightAngled = 0;
+                    }
+                    // Check if the line is vertical
+                    else if (line.From.X == line.To.X && line.From.Y == line.To.Y)
                     {
                         if (line.From.Z > line.To.Z)
                         {
                             line.Flip();
                         }
 
+                        // Check for intersection at the end point
+                        if (Math.Round(line.To.X, 2) == Math.Round(endPoint.X, 2) &&
+                            Math.Round(line.To.Y, 2) == Math.Round(endPoint.Y, 2) &&
+                            Math.Round(line.To.Z, 2) == Math.Round(endPoint.Z, 2))
+                        {
+                            weightAngled = 0.21;
+                            return weightAngled;
+                        }
+                    }
+                    else
+                    {
+                        weightAngled = 0;
+                    }
+                }
+
+                return weightAngled;
+            }
+
+            private static double VerticalNoAngleAtTop(Line inputLine, List<Line> graphLines)
+            {
+                // Intersection logic for angled lines at the end
+                Point3d startPoint = inputLine.From;
+                Point3d endPoint = inputLine.To;
+
+                // Calculate the average Z of the input line
+                double averageZInputLine = (startPoint.Z + endPoint.Z) / 2;
+                double weightVertical = 0;
+
+                // Flip the input line if needed
+                if (startPoint.Z > endPoint.Z)
+                {
+                    inputLine.Flip();
+                }
+
+                int count = 0;
+
+                // Iterate through graph lines
+                foreach (var line in graphLines)
+                {
+                    // Check if the line is horizontal
+                    if (Math.Abs(line.To.Z - line.From.Z) <= 0.02)
+                    {
+                        weightVertical = 0;
+                    }
+                    // Check if the line is a vertical line
+                    else if (line.From.X == line.To.X && line.From.Y == line.To.Y)
+                    {
+                        weightVertical = 0;
+                    }
+                    else
+                    {
+                        // Flip the line if needed
+                        if (line.From.Z > line.To.Z)
+                        {
+                            line.Flip();
+                        }
+
+                        // Calculate the average Z of the line
                         double averageZLine = (line.From.Z + line.To.Z) / 2;
 
-                        // Intersection at the endpoint
+                        // Check for intersection at the start point
                         if (averageZLine <= averageZInputLine)
                         {
                             if (Math.Round(line.To.X, 2) == Math.Round(endPoint.X, 2) &&
@@ -219,6 +400,7 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                     }
                 }
 
+                // Update the weight if no intersections were found
                 if (count == 0)
                 {
                     weightVertical = 0.07;
@@ -227,10 +409,57 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                 return weightVertical;
             }
 
-            private static double VerticalsWithAngledAtStart(Line line, List<Line> graphLines)
+            private static double VerticalsWithAngledAtStart(Line inputLine, List<Line> graphLines)
             {
-                // Logic for verticals with angles at the start
-                return 0.07; // Placeholder logic
+                // Find the intersection for a vertical line
+                Point3d startPoint = inputLine.From;
+                Point3d endPoint = inputLine.To;
+
+                double weightAngled = 0;
+
+                // Flip the input line if the start point Z is greater than the end point Z
+                if (startPoint.Z > endPoint.Z)
+                {
+                    inputLine.Flip();
+                }
+
+                // Test if the line connected to the input line is vertical and attached to the end at both lines
+                foreach (var line in graphLines)
+                {
+                    Point3d linePoint = line.PointAt(line.Length / 2);
+
+                    // Flip the line if its start point Z is greater than its end point Z
+                    if (line.From.Z > line.To.Z)
+                    {
+                        line.Flip();
+                    }
+
+                    // Test if the same line
+                    if (Math.Round(line.From.X, 2) == Math.Round(startPoint.X, 2) &&
+                        Math.Round(line.From.Y, 2) == Math.Round(startPoint.Y, 2) &&
+                        Math.Round(line.From.Z, 2) == Math.Round(startPoint.Z, 2) &&
+                        Math.Round(line.To.X, 2) == Math.Round(endPoint.X, 2) &&
+                        Math.Round(line.To.Y, 2) == Math.Round(endPoint.Y, 2) &&
+                        Math.Round(line.To.Z, 2) == Math.Round(endPoint.Z, 2))
+                    {
+                        continue; // Skip processing as it's the same line
+                    }
+
+                    // Test if the same endpoint
+                    else if (Math.Round(endPoint.X, 2) == Math.Round(line.To.X, 2) &&
+                             Math.Round(endPoint.Y, 2) == Math.Round(line.To.Y, 2) &&
+                             Math.Round(endPoint.Z, 2) == Math.Round(line.To.Z, 2))
+                    {
+                        if (Math.Round(line.From.X, 2) == Math.Round(line.To.X, 2) &&
+                            Math.Round(line.From.Y, 2) == Math.Round(line.To.Y, 2))
+                        {
+                            weightAngled = FindIntersectionVerticalAtStart(line, graphLines);
+                            return weightAngled;
+                        }
+                    }
+                }
+
+                return weightAngled;
             }
 
             private static double CalculateWeight(double averageZ)
@@ -239,6 +468,294 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                 return averageZ; // Placeholder logic
             }
         }
+
+        public class LineProcessing
+        {
+            public static Vector3d GetLineVector(Line line)
+            {
+                // Create a Vector3d object from the start and end points of the line
+                Point3d startPt = line.From;
+                Point3d endPt = line.To;
+                Vector3d lineVector = endPt - startPt;
+                return lineVector;
+            }
+
+            public static bool ChainLinkingPt(Line lineA, Line lineB)
+            {
+                // This function will determine if the point is the connecting point between two adjacent curves.
+                Point3d lineAEndPt = lineA.To;
+                Point3d lineBStartPt = lineB.From;
+
+                bool isConnected = false;
+
+                if (Math.Round(lineAEndPt.X, 2) == Math.Round(lineBStartPt.X, 2) &&
+                    Math.Round(lineAEndPt.Y, 2) == Math.Round(lineBStartPt.Y, 2) &&
+                    Math.Round(lineAEndPt.Z, 2) == Math.Round(lineBStartPt.Z, 2))
+                {
+                    isConnected = true;
+                }
+
+                return isConnected;
+            }
+
+            public static bool HorizontalPtIntTest(Point3d pt, List<Line> lines)
+            {
+                // Test the point to see if it intersects with a point that is attached to a horizontal line in a set of curves  
+                int count = 0;
+
+                foreach (Line line in lines)
+                {
+                    Point3d start_pt = line.From;
+                    Point3d end_pt = line.To;
+
+                    // Testing if the start point of the curve is the same as pt
+                    if (Math.Round(pt.X, 2) == Math.Round(start_pt.X, 2) &&
+                        Math.Round(pt.Y, 2) == Math.Round(start_pt.Y, 2) &&
+                        Math.Round(pt.Z, 2) == Math.Round(start_pt.Z, 2))
+                    {
+                        // If the points are equal, test if the curve that the point is attached to is horizontal
+                        if (Math.Round(start_pt.Z, 2) == Math.Round(end_pt.Z, 2))
+                        {
+                            count += 1;
+                        }
+                    }
+                    // Testing if the end point of the curve is the same as pt
+                    else if (Math.Round(pt.X, 2) == Math.Round(end_pt.X, 2) &&
+                             Math.Round(pt.Y, 2) == Math.Round(end_pt.Y, 2) &&
+                             Math.Round(pt.Z, 2) == Math.Round(end_pt.Z, 2))
+                    {
+                        // If the points are equal, test if the curve that the point is attached to is horizontal
+                        if (Math.Round(start_pt.Z, 2) == Math.Round(end_pt.Z, 2))
+                        {
+                            count += 1;
+                        }
+                    }
+                }
+
+                if (count >= 1)
+                {
+                    return false;
+                }
+                else
+                {
+                    return true;
+                }
+            }
+
+            public static bool VectorsEqual(Line lineA, Line lineB)
+            {
+                // Check if the vectors of lineA and lineB are equal (parallel)
+                Vector3d lineAVector = GetLineVector(lineA);
+                Vector3d lineBVector = GetLineVector(lineB);
+                lineAVector.Unitize();
+                lineBVector.Unitize();
+
+                if (Math.Round(lineAVector.X, 2) == Math.Round(lineBVector.X, 2) &&
+                    Math.Round(lineAVector.Y, 2) == Math.Round(lineBVector.Y, 2) &&
+                    Math.Round(lineAVector.Z, 2) == Math.Round(lineBVector.Z, 2))
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            private bool ArePointsEqual(Point3d pt1, Point3d pt2)
+            {
+                if (Math.Round(pt1.X, 2) == Math.Round(pt2.X, 2) &&
+                       Math.Round(pt1.Y, 2) == Math.Round(pt2.Y, 2) &&
+                       Math.Round(pt1.Z, 2) == Math.Round(pt2.Z, 2))
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            private void RemoveShortLine(Line lineB, List<Line> newLines, List<double> newWeights)
+            {
+                if (lineB.Length < 40)
+                {
+                    int index = newLines.IndexOf(lineB);
+                    if (index != -1)
+                    {
+                        newLines.RemoveAt(index);
+                        newWeights.RemoveAt(index);
+                    }
+                }
+            }
+
+            public (List<Line>, List<double>) CombineCurves(List<Line> crvs, List<double> weights)
+            {
+                List<Line> newLines = new List<Line>();
+                List<double> newWeights = new List<double>();
+
+                // First loop to process the curves and weights
+                for (int i = 0; i < crvs.Count; i++)
+                {
+                    Line lineA = crvs[i];
+                    Point3d lineAStartPt = lineA.From;
+                    Point3d lineAEndPt = lineA.To;
+                    bool addedLine = false;
+                    double weight = weights[i];
+
+                    if (lineAStartPt.Z > lineAEndPt.Z)
+                    {
+                        lineA.Flip();
+                    }
+
+                    for (int j = 0; j < crvs.Count; j++)
+                    {
+                        Line lineB = crvs[j];
+                        double altWeight = weights[j];
+
+
+                        Point3d lineBStartPt = lineB.From;
+                        Point3d lineBEndPt = lineB.To;
+                        Point3d lineBMidpoint = lineB.PointAtLength(lineB.Length / 2);
+
+                        if (lineBStartPt.Z > lineBEndPt.Z)
+                        {
+                            lineB.Flip();
+                        }
+
+                        bool linkPt = ChainLinkingPt(lineA, lineB);
+                        bool areVectorsEqual = VectorsEqual(lineA, lineB);
+
+                        if (areVectorsEqual && linkPt)
+                        {
+                            double dist = Math.Abs(lineAStartPt.DistanceTo(lineBEndPt));
+                            bool lineAHorizontalTest = HorizontalPtIntTest(lineAEndPt, crvs);
+                            bool lineBHorizontalTest = HorizontalPtIntTest(lineBStartPt, crvs);
+
+                            if (lineAHorizontalTest && lineBHorizontalTest && dist < 80)
+                            {
+                                if (Math.Round(lineBStartPt.X, 2) == Math.Round(lineBEndPt.X, 2) &&
+                                    Math.Round(lineBStartPt.Y, 2) == Math.Round(lineBEndPt.Y, 2))
+                                {
+                                    Line newLine = new Line(lineAStartPt, lineBEndPt);
+                                    newLines.Add(newLine);
+                                    newWeights.Add(altWeight + 0.13);
+                                    addedLine = true;
+                                    break;
+                                }
+                                else
+                                {
+                                    Line newLine = new Line(lineAStartPt, lineBEndPt);
+                                    newLines.Add(newLine);
+                                    newWeights.Add(altWeight);
+                                    addedLine = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!addedLine)
+                    {
+                        newLines.Add(lineA);
+                        newWeights.Add(weight);
+                    }
+                }
+                
+
+                // Now, delete the remaining curve that overlaps the new curves
+                for (int i = 0; i < newLines.Count; i++)
+                {
+                    Line lineA = newLines[i];
+                    Point3d lineAStartPt = lineA.From;
+                    Point3d lineAEndPt = lineA.To;
+                    Point3d lineAMidpoint = lineA.PointAtLength(lineA.Length / 2);
+
+                    if (lineA.Length > 20)
+                    {
+                        for (int j = 0; j < newLines.Count; j++)
+                        {
+                            Line lineB = newLines[j];
+                            Point3d lineBStartPt = lineB.From;
+                            Point3d lineBEndPt = lineB.To;
+                            Point3d lineBMidpoint = lineB.PointAtLength(lineB.Length / 2);
+
+                            if (lineBStartPt.Z == lineBEndPt.Z)
+                            {
+                                // Horizontal line, no action
+                                continue;
+                            }
+
+                            else if (Math.Round(lineBStartPt.X, 2) == Math.Round(lineBEndPt.X, 2) &&
+                                Math.Round(lineBStartPt.Y, 2) == Math.Round(lineBEndPt.Y, 2))
+                            {
+                                // Same start and end points
+                                continue;
+                            }
+                            else
+                            {
+                                bool linkPt = ChainLinkingPt(lineA, lineB);
+                                bool areVectorsEqual = VectorsEqual(lineA, lineB);
+
+                                if (areVectorsEqual)
+                                {
+
+                                    if (ArePointsEqual(lineAMidpoint, lineBStartPt))
+                                    {
+                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                    }
+                                    else if (ArePointsEqual(lineAMidpoint, lineBEndPt))
+                                    {
+                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                    }
+
+                                    else if (ArePointsEqual(lineBMidpoint, lineAStartPt))
+                                    {
+                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                    }
+
+                                    else if (ArePointsEqual(lineBMidpoint, lineAEndPt))
+                                    {
+                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
+                                        {
+                                            RemoveShortLine(lineB, newLines, newWeights);
+                                        }
+                                    }
+                                }
+                            }
+                            // Additional conditions can be added here, similar to the ones above
+                        }
+                    }
+                }
+                return (newLines, newWeights);
+            }
+        }
+        
+
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             //Declare List of curves
@@ -297,11 +814,61 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                 counter++;
             }
 
+            Dictionary<Line, double> weightsDict = LineProcessor.AddWeightToLines(lines);
+
+            var weights = new List<double>();
+            var weightedEdges = new List<Line>(); 
+
+            foreach (var kvp in weightsDict)
+            {
+                weights.Add(kvp.Value);
+                weightedEdges.Add(kvp.Key);
+            }
+
+            //sort weights
+            var spatialDict = new Dictionary<Line, double>(); // Replace 'Line' with the appropriate type for lines
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                spatialDict[lines[i]] = weights[i];
+            }
+
+            
+
+            var sortedWeights = new List<double>();
+            var sortedEdges = new List<Line>();
+
+            
+            LineProcessing lineProcessing = new LineProcessing();
+            (weightedEdges, weights) = lineProcessing.CombineCurves(weightedEdges, weights);
+
+            // Sort by weight (value) and create a new dictionary
+            var sortedByWeights = weightedEdges.Zip(weights, (a, b) => new { ItemA = a, ItemB = b })
+                .OrderBy(x => x.ItemB)  // Sort by ListB's values
+                .ToList();
+
+            // Separate the sorted pairs back into individual lists
+            List<Line> sortedEdgesA = sortedByWeights.Select(x => x.ItemA).ToList(); //issues here
+            List<double> sortedWeightsB = sortedByWeights.Select(x => x.ItemB).ToList(); //issues here
+
+            foreach (var line in sortedEdgesA)
+            {
+                sortedEdges.Add(line);
+            }
+            foreach (var weight in sortedWeightsB)
+            {
+                sortedWeights.Add(weight);
+            }
+
             // Set the output data
             DA.SetDataList(0, lines);
             DA.SetDataList(1, nodeList);
             DA.SetDataTree(2, graftedTree);
             DA.SetDataList(3, connectionLengths);
+            DA.SetDataList(4, weights);
+            DA.SetDataList(5, sortedWeights);
+            DA.SetDataList(6, sortedEdges);
+
         }
 
 

@@ -312,9 +312,6 @@ def vertical_no_angle_at_top(input_line, graph_lines):
 
 def calculate_weight(average_z):
     """
-    Calculate the weight based on the average Z height.
-
-    You can customize this function based on your specific criteria for assigning weights.
 
     Parameters:
     average_z (float): Average Z height.
@@ -434,3 +431,229 @@ if __name__ == "__main__":
 
     #print(nodes)
 
+
+
+
+
+
+import rhinoscriptsyntax as rs
+import Rhino.Geometry as rg
+import scriptcontext as sc
+import Rhino
+
+
+def get_crv_vector(crv):
+    #get the vector direction of a crv    # Create a Rhino.Geometry.Vector3d object from the start and end points
+    start_point = crv.From
+    end_point = crv.To
+    line_vector = rg.Vector3d(end_point - start_point)
+    return line_vector
+
+def chain_linking_pt(line_a, line_b):
+    #this function will determine if the point is the connceting point between two adjacent curves
+    line_a_start_pt = line_a.From
+    line_a_end_pt = line_a.To
+
+    line_b_start_pt = line_b.From
+    line_b_end_pt = line_b.To
+    boolean = False
+
+    if round(line_a_end_pt.X, 2) == round(line_b_start_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_start_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_start_pt.Z, 2):
+        boolean = True
+    else:
+        boolean = False
+
+    return boolean
+    
+def horizontal_pt_int_test(pt, crvs):
+    #test the point to see if it intersects with a point that is attached to a horizontal line in a set of curves  
+    count = 0
+    for crv in crvs:
+        #dot = visualize_line(crv, "horizontal_pt_int_test")
+        start_pt = crv.From
+        end_pt = crv.To
+        #testing if the start point of the curve is the same as pt
+        if round(pt.X, 2) == round(start_pt.X, 2) and round(pt.Y, 2) == round(start_pt.Y, 2) and round(pt.Z, 2) == round(start_pt.Z, 2):
+            #if the points are equal, test if the curve that the point is attached to is horizontal
+            if start_pt.Z == end_pt.Z:
+                count += 1
+
+        #testing if the end point of the curve is the same as pt
+        elif round(pt.X, 2) == round(end_pt.X, 2) and round(pt.Y, 2) == round(end_pt.Y, 2) and round(pt.Z, 2) == round(end_pt.Z, 2):
+            #if the points are equal, test if the curve that the point is attached to is horizontal
+            if start_pt.Z == end_pt.Z:
+                count += 1
+
+    if count >= 1:
+        return False
+    else:
+        return True
+
+def visualize_line(line, name):
+    midpoint = line.PointAtLength(line.Length/2)
+    dot = rs.AddTextDot(name, midpoint)
+    return dot
+
+def vectors_equal(line_a, line_b):
+    line_a_vector = get_crv_vector(line_a)
+    line_b_vector = get_crv_vector(line_b)
+    line_a_vector = rs.VectorUnitize(line_a_vector)
+    line_b_vector = rs.VectorUnitize(line_b_vector)
+
+    if round(line_a_vector[0], 2) == round(line_b_vector[0], 2) and round(line_a_vector[1], 2) == round(line_b_vector[1], 2) and round(line_a_vector[2], 2) == round(line_b_vector[2], 2):
+        return True
+    else:
+        return False  
+
+sc.doc = Rhino.RhinoDoc.ActiveDoc
+
+new_lines = []
+new_weights = []
+
+for i in range(len(crvs)):
+    #define all line A parameters here
+    line_a = crvs[i]
+    #dot_a = visualize_line(line_a, "line_a")
+    
+    line_a_start_pt = line_a.From
+    line_a_end_pt = line_a.To
+    
+    if line_a_start_pt.Z > line_a_end_pt.Z:
+        line_a.Flip()
+
+    for j in range(len(crvs)):
+        line_b = crvs[j]
+        weight = weights[i]
+        alt_weight = weights[j]
+        #define all line B parameters here
+        added_line = False
+        #dot_b = visualize_line(line_b, "line_b")
+        
+        line_b_start_pt = line_b.From
+        line_b_end_pt = line_b.To
+        line_b_midpoint = line_b.PointAtLength(line_b.Length/2)
+        if line_b_start_pt.Z > line_b_end_pt.Z:
+            line_b.Flip()
+        #function to test if the curve pt links the two curves together
+        link_pt = chain_linking_pt(line_a, line_b)
+        #function to test if the vectors are equal
+        are_vectors_equal = vectors_equal(line_a, line_b)
+        #develop logic that defines the joining of the curves on the same vector and add weight b to the line ab
+        if are_vectors_equal and link_pt:
+            dist = abs(rs.Distance(line_a_start_pt, line_b_end_pt))
+            line_a_horizontal_pt_int_test = horizontal_pt_int_test(line_a_end_pt, crvs)
+            line_b_horizontal_pt_int_test = horizontal_pt_int_test(line_b_start_pt, crvs)
+            if line_a_horizontal_pt_int_test and line_b_horizontal_pt_int_test and dist < 40:  
+                    #determine if the currnet line is vertical or angled to add weight
+                    #vertical = weight
+                    #angled = alt_weight
+                    if round(line_b_start_pt.X, 2) == round(line_b_end_pt.X, 2) and round(line_b_start_pt.Y, 2) == round(line_b_end_pt.Y, 2):
+                        new_line = rg.Line(line_a_start_pt, line_b_end_pt)
+                        new_lines.append(new_line)
+                        new_weights.append(alt_weight + .13)
+                        added_line = True
+                        break
+                    else:
+                        new_line = rg.Line(line_a_start_pt, line_b_end_pt)
+                        new_lines.append(new_line)
+                        new_weights.append(alt_weight)
+                        added_line = True
+                        break
+        #rs.DeleteObject(dot_b)
+    #rs.DeleteObject(dot_a)
+    if added_line is False:
+        new_lines.append(line_a)
+        new_weights.append(weight)
+
+
+
+#now delete the remaining curve that overlaps the new curv 
+for line_a in new_lines:
+    line_a_start_pt = line_a.From
+    line_a_end_pt = line_a.To
+    line_a_midpoint = line_a.PointAtLength(line_a.Length/2)
+    #dot_a = visualize_line(line_a, "line_a")
+
+    if line_a.Length > 20:
+        for line_b in new_lines:
+            line_b_start_pt = line_b.From
+            line_b_end_pt = line_b.To
+            line_b_midpoint = line_b.PointAtLength(line_b.Length/2)
+            #dot_b = visualize_line(line_b, "line_b")
+
+            if line_b_start_pt.Z == line_b_end_pt.Z:
+                #print("Horizontal Line")
+                pass
+
+            elif round(line_b_start_pt.X, 2) == round(line_b_end_pt.X, 2) and round(line_b_start_pt.Y, 2) == round(line_b_end_pt.Y, 2):
+                pass
+
+            else:
+                link_pt = chain_linking_pt(line_a, line_b)
+                are_vectors_equal = vectors_equal(line_a, line_b)
+                if are_vectors_equal:
+                    # test for a mid point connection and a start or end point connection
+                    if round(line_a_midpoint.X, 2) == round(line_b_start_pt.X, 2) and round(line_a_midpoint.Y, 2) == round(line_b_start_pt.Y, 2) and round(line_a_midpoint.Z, 2) == round(line_b_start_pt.Z, 2):
+                        if round(line_a_end_pt.X, 2) == round(line_b_end_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+
+                        elif round(line_a_start_pt.X, 2) == round(line_b_start_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+             
+                    elif round(line_a_midpoint.X, 2) == round(line_b_end_pt.X, 2) and round(line_a_midpoint.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_midpoint.Z, 2) == round(line_b_end_pt.Z, 2):
+                        if round(line_a_end_pt.X, 2) == round(line_b_end_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+
+                        elif round(line_a_start_pt.X, 2) == round(line_b_start_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+
+                        
+                    elif round(line_b_midpoint.X, 2) == round(line_a_start_pt.X, 2) and round(line_b_midpoint.Y, 2) == round(line_a_start_pt.Y, 2) and round(line_b_midpoint.Z, 2) == round(line_a_start_pt.Z, 2):
+                        if round(line_a_end_pt.X, 2) == round(line_b_end_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+
+                        elif round(line_a_start_pt.X, 2) == round(line_b_start_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+                 
+                    elif round(line_b_midpoint.X, 2) == round(line_a_end_pt.X, 2) and round(line_b_midpoint.Y, 2) == round(line_a_end_pt.Y, 2) and round(line_b_midpoint.Z, 2) == round(line_a_end_pt.Z, 2):
+                        if round(line_a_end_pt.X, 2) == round(line_b_end_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+
+                        elif round(line_a_start_pt.X, 2) == round(line_b_start_pt.X, 2) and round(line_a_end_pt.Y, 2) == round(line_b_end_pt.Y, 2) and round(line_a_end_pt.Z, 2) == round(line_b_end_pt.Z, 2):
+                            if line_b.Length < 20:
+                                if isinstance(line_b, rg.Line):
+                                    index = new_lines.index(line_b)
+                                    new_lines.remove(line_b)
+                                    new_weights.pop(index) 
+            #rs.DeleteObject(dot_b)
+        #rs.DeleteObject(dot_a)
+
+sc.doc = ghdoc
