@@ -10,6 +10,10 @@ using System.Linq;
 using Rhino.Render.ChangeQueue;
 using System.Runtime.Remoting.Messaging;
 using System.Collections;
+using Rhino.Geometry.Intersect;
+using Rhino.UI;
+using System.Diagnostics.Eventing.Reader;
+using Compas.Robot.Link;
 
 namespace Spatial_Rhino7.Spatial_Printing_Components
 {
@@ -45,6 +49,8 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
             pManager.AddIntegerParameter("Graph_Node_Weights", "GNW", "Graph: Weight of the edge for sorting", GH_ParamAccess.tree);
             pManager.AddIntegerParameter("Sorted_Graph_Node_Weights", "SGNW", "Graph: Sorted weight of the edge for sorting", GH_ParamAccess.tree);
             pManager.AddLineParameter("Sorted_Graph_Lines", "SGL", "Graph:  Sorted lines", GH_ParamAccess.tree);
+            pManager.AddLineParameter("Debug Lines", "SGL", "Graph:  Sorted lines", GH_ParamAccess.tree);
+
 
 
 
@@ -528,7 +534,7 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                         if (Math.Round(start_pt.Z, 2) == Math.Round(end_pt.Z, 2))
                         {
                             count += 1;
-                        }
+                        }   
                     }
                 }
 
@@ -578,7 +584,7 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
 
             private void RemoveShortLine(Line lineB, List<Line> newLines, List<double> newWeights)
             {
-                if (lineB.Length < 40)
+                if (lineB.Length < 100)
                 {
                     int index = newLines.IndexOf(lineB);
                     if (index != -1)
@@ -588,11 +594,17 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                     }
                 }
             }
+            private bool IsNearEndpoint(double parameter, Curve curve)
+            {
+                const double tolerance = 1e-6; // Small tolerance to account for numerical precision
+                return Math.Abs(parameter - curve.Domain.T0) < tolerance || Math.Abs(parameter - curve.Domain.T1) < tolerance;
+            }
 
-            public (List<Line>, List<double>) CombineCurves(List<Line> crvs, List<double> weights)
+            public (List<Line>, List<double>, List<Line>) CombineCurves(List<Line> crvs, List<double> weights)
             {
                 List<Line> newLines = new List<Line>();
                 List<double> newWeights = new List<double>();
+                List<Line> debugLines = new List<Line>();
 
                 // First loop to process the curves and weights
                 for (int i = 0; i < crvs.Count; i++)
@@ -670,88 +682,129 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
                     Point3d lineAEndPt = lineA.To;
                     Point3d lineAMidpoint = lineA.PointAtLength(lineA.Length / 2);
 
-                    if (lineA.Length > 20)
+                    int intersectionCount = 0;
+
+
+                    debugLines.Add(lineA);
+                    List<int> weightToDelete = new List<int>();
+                    List<int> edgeToDelete = new List<int>();
+                    
+
+                    for (int j = 0; j < newLines.Count; j++)
                     {
-                        for (int j = 0; j < newLines.Count; j++)
+                        
+
+                        Line lineB = newLines[j];
+                        Point3d lineBStartPt = lineB.From;
+                        Point3d lineBEndPt = lineB.To;
+                        Point3d lineBMidpoint = lineB.PointAtLength(lineB.Length / 2);
+                        
+                        // Skip self-intersection checks
+                        if (ArePointsEqual(lineA.To, lineB.To) && ArePointsEqual(lineA.From, lineB.From))
                         {
-                            Line lineB = newLines[j];
-                            Point3d lineBStartPt = lineB.From;
-                            Point3d lineBEndPt = lineB.To;
-                            Point3d lineBMidpoint = lineB.PointAtLength(lineB.Length / 2);
+                            continue;
+                        }
 
-                            if (lineBStartPt.Z == lineBEndPt.Z)
-                            {
-                                // Horizontal line, no action
-                                continue;
-                            }
+                        if (lineBStartPt.Z == lineBEndPt.Z)
+                        {
+                            // Horizontal line, no action
 
-                            else if (Math.Round(lineBStartPt.X, 2) == Math.Round(lineBEndPt.X, 2) &&
-                                Math.Round(lineBStartPt.Y, 2) == Math.Round(lineBEndPt.Y, 2))
+                            continue;
+                        }
+
+                        else if (Math.Round(lineBStartPt.X, 2) == Math.Round(lineBEndPt.X, 2) &&
+                            Math.Round(lineBStartPt.Y, 2) == Math.Round(lineBEndPt.Y, 2) &&
+                            Math.Round(lineBStartPt.Z, 2) == Math.Round(lineBEndPt.Z, 2))
+                        {
+                            // Same start and end points
+                            continue;
+                        }
+                        //vertical line
+                        else if (Math.Round(lineBStartPt.X, 2) == Math.Round(lineBEndPt.X, 2) &&
+                            Math.Round(lineBStartPt.Y, 2) == Math.Round(lineBEndPt.Y, 2))
+                        {
+                            // Vertical line, find overlapping
+                            Point3d paramA = lineB.PointAt(0.2);
+                            Point3d paramB = lineB.PointAt(0.8);
+
+                            Point3d paramAA = lineA.PointAt(0.2);
+                            Point3d paramBA = lineA.PointAt(0.8);
+
+
+                            //test paramA & paramB for intersection with lineB
+                            Point3d paramA_lineA = lineA.ClosestPoint(paramA, true);
+                            Point3d paramB_lineA = lineA.ClosestPoint(paramB, true);
+
+                            Point3d paramA_lineB = lineB.ClosestPoint(paramAA, true);
+                            Point3d paramB_lineB = lineB.ClosestPoint(paramBA, true);
+
+                            
+
+                            if (ArePointsEqual(paramA, paramA_lineA) && ArePointsEqual(paramB, paramB_lineA))
                             {
-                                // Same start and end points
-                                continue;
+                                if (lineB.Length < 40)
+                                {
+                                    weightToDelete.Add(j);
+                                    edgeToDelete.Add(j);
+                                }
                             }
+                            else if (ArePointsEqual(paramAA, paramA_lineB) && ArePointsEqual(paramBA, paramB_lineB))
+                            {
+                                
+                                if (lineA.Length < 40)
+                                {   
+                                    weightToDelete.Add(i);
+                                    edgeToDelete.Add(i);
+                                }
+                            }            
                             else
                             {
-                                bool linkPt = ChainLinkingPt(lineA, lineB);
-                                bool areVectorsEqual = VectorsEqual(lineA, lineB);
+                                continue;
+                            }
+                        }
+                        else
 
-                                if (areVectorsEqual)
+                        {
+                            
+                            bool areVectorsEqual = VectorsEqual(lineA, lineB);
+
+                            if (areVectorsEqual)
+                            {
+                                Point3d paramA = lineB.PointAt(0.2);
+                                Point3d paramB = lineB.PointAt(0.8);
+
+                                //test paramA & paramB for intersection with lineB
+                                Point3d paramA_lineA = lineA.ClosestPoint(paramA, true);
+                                Point3d paramB_lineA = lineA.ClosestPoint(paramB, true);
+
+                                if (ArePointsEqual(paramA, paramA_lineA) && ArePointsEqual(paramB, paramB_lineA))
                                 {
-
-                                    if (ArePointsEqual(lineAMidpoint, lineBStartPt))
+                                    if (lineB.Length < 40)
                                     {
-                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
-                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
+                                        weightToDelete.Add(j);
+                                        edgeToDelete.Add(j);
                                     }
-                                    else if (ArePointsEqual(lineAMidpoint, lineBEndPt))
+                                    else if (lineA.Length < 40)
                                     {
-                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
-                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
-                                    }
-
-                                    else if (ArePointsEqual(lineBMidpoint, lineAStartPt))
-                                    {
-                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
-                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
-                                    }
-
-                                    else if (ArePointsEqual(lineBMidpoint, lineAEndPt))
-                                    {
-                                        if (ArePointsEqual(lineAEndPt, lineBEndPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
-                                        else if (ArePointsEqual(lineAStartPt, lineBStartPt))
-                                        {
-                                            RemoveShortLine(lineB, newLines, newWeights);
-                                        }
+                                        weightToDelete.Add(i);
+                                        edgeToDelete.Add(i);
                                     }
                                 }
                             }
-                            // Additional conditions can be added here, similar to the ones above
+
                         }
+                        // Additional conditions can be added here, similar to the ones above
+
+                        for (int k = 0; k < weightToDelete.Count; k++)
+                        {
+                            newWeights.RemoveAt(weightToDelete[k]);
+                            newLines.RemoveAt(edgeToDelete[k]);
+                        }
+                        weightToDelete.Clear();
+                        edgeToDelete.Clear();
                     }
                 }
-                return (newLines, newWeights);
+                return (newLines, newWeights, debugLines);
             }
         }
         
@@ -818,6 +871,7 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
 
             var weights = new List<double>();
             var weightedEdges = new List<Line>(); 
+            var debugLines = new List<Line>();
 
             foreach (var kvp in weightsDict)
             {
@@ -840,7 +894,7 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
 
             
             LineProcessing lineProcessing = new LineProcessing();
-            (weightedEdges, weights) = lineProcessing.CombineCurves(weightedEdges, weights);
+            (weightedEdges, weights, debugLines) = lineProcessing.CombineCurves(weightedEdges, weights);
 
             // Sort by weight (value) and create a new dictionary
             var sortedByWeights = weightedEdges.Zip(weights, (a, b) => new { ItemA = a, ItemB = b })
@@ -868,6 +922,8 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
             DA.SetDataList(4, weights);
             DA.SetDataList(5, sortedWeights);
             DA.SetDataList(6, sortedEdges);
+            DA.SetDataList(7, debugLines);
+
 
         }
 
