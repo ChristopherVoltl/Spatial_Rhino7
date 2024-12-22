@@ -16,6 +16,7 @@ using Compas.Robot.Link;
 using Rhino.DocObjects;
 using System.IO;
 using System.Collections;
+using static Rhino.Render.TextureGraphInfo;
 
 namespace Spatial_Rhino7
 {
@@ -383,528 +384,72 @@ protected override void SolveInstance(IGH_DataAccess DA)
                         //get the planes for each path
                         //List<Plane> crvPathPlanes = PolylinePlaneDivider.DividePolylineByLength(pathCurves[j], 10);                     
 
-                        List<Curve> segments = LineCheck.ExplodeCurves(pathCurves[j]);
+                       // List<Curve> segments = LineCheck.ExplodeCurves(pathCurves[j]);
 
-                        //if the polyline is comprised of more than one curve loop through each curve
-                        for (int i = 0; i < segments.Count; i++)
+                        //this will be used to make all the curves AnglesUp 
+                        if (pathCurves[j].PointAtStart.Z > pathCurves[j].PointAtEnd.Z)
                         {
-                            if (segments[i] == null || !segments[i].IsValid) continue;
+                            pathCurves[j].Reverse();
+                        }
+                        //get the planes for each path
+                        int numCrvPathPlanes = 10;
+                        List<Plane> crvPathPlanes = DivideCurveIntoPlanes(pathCurves[j], numCrvPathPlanes);
 
-                            //this will be used to make all the curves AnglesUp 
-                            if (segments[i].PointAtStart.Z > segments[i].PointAtEnd.Z)
+                        //for each point, start extrusion, extrude path, end extrusion.
+
+                        //for each curve define if the curve is angled up, down, horizontal or vertical
+                        string lineDescriptor = LineCheck.OrientLine(pathCurves[j]);
+                        
+
+                            
+
+                        //if the curve is angled up
+                        if (lineDescriptor == "AngledUp")
+                        {   
+                            //function to determine if the curve is unsupported
+                            Boolean isUnsupported = LineCheck.unsupporedCheck(printedPath,pathCurves[j]);
+                            //If the curve is unsupported do this
+                            if (isUnsupported)
                             {
-                                segments[i].Reverse();
-                            }
-
-                            //get the planes for each path
-                            int numCrvPathPlanes = 10;
-                            List<Plane> crvPathPlanes = DivideCurveIntoPlanes(segments[i], numCrvPathPlanes);
-
-                            //for each point, start extrusion, extrude path, end extrusion.
-
-                            //for each curve define if the curve is angled up, down, horizontal or vertical
-                            string lineDescriptor = LineCheck.OrientLine(segments[i]);
-
-                            //if the curve is angled up
-                            if (lineDescriptor == "AngledUp")
-                            {   
-                                //function to determine if the curve is unsupported
-                                Boolean isUnsupported = LineCheck.unsupporedCheck(printedPath, segments[i]);
-                                //If the curve is unsupported do this
-                                if (isUnsupported)
-                                {
-                                    //nothing will change
+                                //nothing will change
                                
 
-                                    //get the first and last plane of the curve
-                                    Plane pathStart = crvPathPlanes[0];
-                                    Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
-                                    double t = 0.5;
-                                    Curve curve = segments[i];
-                                    curve.Domain = new Interval(0, 1);
-                                    Point3d pointOnCurve = curve.PointAt(t);
-                                    Vector3d tangent = curve.TangentAt(t);
-                                    Vector3d zAxis = pathStart.Origin - pathEnd.Origin;
-
-                                    zAxis.Unitize();
-
-                                    // Step 2: Calculate the angle between Z-axis and world Z-axis in degrees
-                                    Point3d projectedEndPt = new Point3d(pathEnd.Origin.X, pathEnd.Origin.Y, pathStart.Origin.Z);
-                                    Vector3d crvVec = pathEnd.Origin - pathStart.Origin;
-                                    Vector3d projectedCrvVec = projectedEndPt - pathStart.Origin;
-
-                                    double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec) * (180.0 / Math.PI);
-
-                                    //If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
-                                    if (angleToWorldZ < 45.0)
-                                    {
-                                        // Rotate zAxis to be at a 45-degree angle to the world Z-axis
-                                        double rotationAngle =  angleToWorldZ - 55;  // Calculate the amount to rotate
-                                        Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(zAxis, Vector3d.ZAxis), pathStart.Origin);
-                                        zAxis.Transform(rotation);
-                                    }
-
-                                    //Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
-                                    Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, zAxis);
-                                    xAxis.Unitize();
-
-                                    // If the X-axis is zero (e.g., if Z-axis is vertical), use the world Y-axis as a fallback
-                                    if (xAxis.IsZero)
-                                    {
-                                        xAxis = Vector3d.CrossProduct(Vector3d.YAxis, zAxis);
-                                        xAxis.Unitize();
-                                    }
-
-                                    //Rotate X-axis by 180 degrees around Z-axis by negating it
-                                    double xAxisDif = Vector3d.VectorAngle(xAxis, Vector3d.XAxis) * (180.0 / Math.PI);
-
-                                    if (Math.Abs(xAxisDif) < 90)
-                                    {
-                                        xAxis = -xAxis;
-                                    }
-
-                                    //Calculate the Y-axis to complete the orthogonal system
-                                    Vector3d yAxis = Vector3d.CrossProduct(zAxis, xAxis);
-                                    yAxis.Unitize();
-
-
-                                    //Construct the plane with the calculated axes
-                                    Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
-                                    Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
-                                    Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
-
-
-
-                                    //Get the plane orientation of the curve based on the start and end point
-                                    List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
-
-
-                                    //create the extrusion data
-
-                                    //define if the extrusion needs a traversal path by calculating the distance between the last curve end and the current curve start
-                                    //if the distance is greater than 10mm, add a traversal path
-                                
-                                
-                                    try
-                                    {
-                                        Curve PrevPath = segments[i - 1];
-                                        Point3d PrevPathStart = PrevPath.PointAtStart;
-                                        Plane TraversalPathEndPlaneStart = new Plane(PrevPathStart, xAxis, yAxis);
-                                        Point3d PrevPathEnd = PrevPath.PointAtEnd;
-                                        Plane TraversalPlanePlaneEnd = new Plane(PrevPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
-
-
-                                        //if the distance between the end of the previous curve and the start of the
-                                        //current curve is greater than 10mm, add a traversal path
-                                        if (PrevPathEnd.DistanceTo(pathStart.Origin) > 10)
-                                        {
-                                        
-                                            pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlanePlaneEnd, stopExtrude, 3.0f);
-                                            pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            pData[0].Events["NozzleCooling"] = stopCooling;
-                                            allPlanes.Add(TraversalPlanePlaneEnd);
-                                            pDataList.Add(pData[0]);
-                                            counter++;
-
-                                            //create traversal path
-                                            //move end point 10mm vertically
-                                            Point3d TraversalPath = new Point3d(PrevPathEnd.X, PrevPathEnd.Y, PrevPathEnd.Z + 20);
-                                            Plane TraversalPlane = new Plane(TraversalPath, -Vector3d.XAxis, Vector3d.YAxis);
-                                            pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlane, 2.0f);
-                                            pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            allPlanes.Add(TraversalPlane);
-                                            pDataList.Add(pData[1]);
-                                            counter++;
-
-                                            //move to loction above the current curve at the same Z height of TraversalPath
-                                            Point3d TraversalPathEnd = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, TraversalPath.Z);
-                                            Plane TraversalPathEndPlane = new Plane(TraversalPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
-                                            pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPathEndPlane, stopExtrude, 3.0f);
-                                            pData[2].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            allPlanes.Add(TraversalPathEndPlane);
-                                            pDataList.Add(pData[2]);
-                                            counter++;
-                                        }
-                                        else
-                                        {
-                                            pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
-                                            pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-
-                                            pDataList.Add(pData[0]);
-                                            counter++;
-
-                                            pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 3.0f);
-                                            pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            pDataList.Add(pData[1]);
-                                            counter++;
-                                        }
-                                    }
-                                    catch (ArgumentOutOfRangeException)
-                                    {
-                                        pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
-                                        pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                        pData[0].Events["NozzleCooling"] = stopCooling;
-                                        pDataList.Add(pData[0]);
-                                        counter++;
-
-                                    }
-                                
-
-                                
-
-
-                                    //define the circle motion for the start of the extrusion
-                                    Circle circle = new Circle(pathStart, 1);
-
-
-
-                                    //doc.Objects.AddCircle(circle);
-                                    //doc.Views.Redraw();
-                                    int numPlanes = 10;
-                                    List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
-                                    //loop through the circle planes
-                                    for (int k = 0; k < circlePathPlanes.Count; k++)
-                                    {
-                                        Plane cirPath = circlePathPlanes[k];
-                                    
-                                        pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
-                                        pData[2].Events["Extrude"] = extrude;
-                                        pData[2].AxisStates["E5"] = new SMT.AxisState(2.4);
-
-                                        pDataList.Add(pData[2]);
-                                        allPlanes.Add(cirPath);
-                                        counter++;
-                                    }
-                                
-
-                                    pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
-                                    pData[3].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                    pDataList.Add(pData[3]);
-                                    counter++;
-
-
-
-                                    // Loop through each plane in the list
-                                    for (int l = 0; l < planeInterpolation.Count; l++)
-                                    {
-                                        if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
-                                        double percentPath = (80.0 / 100.0) * numCrvPathPlanes;
-                                        Plane path = planeInterpolation[l];
-                                        //if the plane is the last plane of the curve
-                                        if (l > percentPath)
-                                        {
-                                        
-                                            pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
-                                            pData[4].AxisStates["E5"] = new SMT.AxisState(1.4);
-
-                                        }
-                                        else
-                                        {
-                                        
-                                            pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
-                                            pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
-
-
-                                        }
-                                        //pData[4].AxisStates["E5"] = axisStateE5;
-                                        printedPath.Add(segments[i]);
-                                        pDataList.Add(pData[4]);
-                                        allPlanes.Add(path);
-                                        counter++;
-                                    }
-
-                                    //New code for the leadout and traversal path
-                                    //
-
-                                    //leave this code for the last plane on the last segment in the polyline curve
-                                    //pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
-                                    //pDataList.Add(pData[5]);
-                                    //counter++;
-                                    //pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
-                                    //pDataList.Add(pData[6]);
-                                    //counter++;
-                                }
-                                else
-                                {
-                                    //path modification to account for intersection with the unsupported curve
-
-                                    
-
-                                    double t = 0.5;
-                                    Curve curve = segments[i];
-                                    curve.Domain = new Interval(0, 1);
-                                    Point3d pointOnCurve = curve.PointAt(t);
-                                    Vector3d tangent = curve.TangentAt(t);
-                                    
-
-                                    //path modification
-                                    Point3d crvStart = curve.PointAtStart;
-                                    Point3d crvEnd = curve.PointAtEnd;
-                                    // Convert degrees to radians
-                                    double angleRadians = RhinoMath.ToRadians(22.5);
-
-                                    // Create a rotation transformation
-                                    Transform crvRotation = Transform.Rotation(angleRadians, Vector3d.ZAxis, crvStart);
-                                    Curve rotatedCrv = curve.DuplicateCurve();
-                                    rotatedCrv.Transform(crvRotation);
-                                    Point3d newEnd = rotatedCrv.PointAtEnd;
-                                    Curve pathModified = new LineCurve(crvStart, newEnd);
-                                    
-                                    //get the planes for each path
-                                    int numPathModifiedPlanes = 10;
-                                    
-                                    List<Plane> pathModifiedPlanes = DivideCurveIntoPlanes(pathModified, numPathModifiedPlanes);
-                                    //get the first and last plane of the curve
-                                    Plane pathStart = pathModifiedPlanes[0];
-                                    Plane pathEnd = pathModifiedPlanes[pathModifiedPlanes.Count - 1];
-                                    Vector3d zAxis = pathStart.Origin - pathEnd.Origin;
-
-
-                                    zAxis.Unitize();
-
-                                    // Step 2: Calculate the angle between Z-axis and world Z-axis in degrees
-                                    Point3d projectedEndPt = new Point3d(pathEnd.Origin.X, pathEnd.Origin.Y, pathStart.Origin.Z);
-                                    Vector3d crvVec = pathEnd.Origin - pathStart.Origin;
-                                    Vector3d projectedCrvVec = projectedEndPt - pathStart.Origin;
-
-                                    double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec) * (180.0 / Math.PI);
-
-                                    //If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
-                                    if (angleToWorldZ < 45.0)
-                                    {
-                                        // Rotate zAxis to be at a 45-degree angle to the world Z-axis
-                                        double rotationAngle = angleToWorldZ - 55;  // Calculate the amount to rotate
-                                        Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(zAxis, Vector3d.ZAxis), pathStart.Origin);
-                                        zAxis.Transform(rotation);
-                                    }
-
-                                    //Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
-                                    Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, zAxis);
-                                    xAxis.Unitize();
-
-                                    // If the X-axis is zero (e.g., if Z-axis is vertical), use the world Y-axis as a fallback
-                                    if (xAxis.IsZero)
-                                    {
-                                        xAxis = Vector3d.CrossProduct(Vector3d.YAxis, zAxis);
-                                        xAxis.Unitize();
-                                    }
-
-                                    //Rotate X-axis by 180 degrees around Z-axis by negating it
-                                    double xAxisDif = Vector3d.VectorAngle(xAxis, Vector3d.XAxis) * (180.0 / Math.PI);
-
-                                    if (Math.Abs(xAxisDif) < 90)
-                                    {
-                                        xAxis = -xAxis;
-                                    }
-
-                                    //Calculate the Y-axis to complete the orthogonal system
-                                    Vector3d yAxis = Vector3d.CrossProduct(zAxis, xAxis);
-                                    yAxis.Unitize();
-
-
-                                    //Construct the plane with the calculated axes
-                                    Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
-                                    Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
-
-                                    //Get the plane orientation of the curve based on the start and end point
-                                    List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(pathModified, planeAtStart, planeAtEnd, numCrvPathPlanes);
-
-
-                                    //create the extrusion data
-
-                                    //define if the extrusion needs a traversal path by calculating the distance between the last curve end and the current curve start
-                                    //if the distance is greater than 10mm, add a traversal path
-
-
-                                    try
-                                    {
-                                        Curve PrevPath = segments[i - 1];
-                                        Point3d PrevPathStart = PrevPath.PointAtStart;
-                                        Plane TraversalPathEndPlaneStart = new Plane(PrevPathStart, xAxis, yAxis);
-                                        Point3d PrevPathEnd = PrevPath.PointAtEnd;
-                                        Plane TraversalPlanePlaneEnd = new Plane(PrevPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
-
-
-                                        //if the distance between the end of the previous curve and the start of the
-                                        //current curve is greater than 10mm, add a traversal path
-                                        if (PrevPathEnd.DistanceTo(pathStart.Origin) > 10)
-                                        {
-
-                                            pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlanePlaneEnd, stopExtrude, 3.0f);
-                                            pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            pData[0].Events["NozzleCooling"] = stopCooling;
-                                            allPlanes.Add(TraversalPlanePlaneEnd);
-                                            pDataList.Add(pData[0]);
-                                            counter++;
-
-                                            //create traversal path
-                                            //move end point 10mm vertically
-                                            Point3d TraversalPath = new Point3d(PrevPathEnd.X, PrevPathEnd.Y, PrevPathEnd.Z + 20);
-                                            Plane TraversalPlane = new Plane(TraversalPath, -Vector3d.XAxis, Vector3d.YAxis);
-                                            pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlane, 3.0f);
-                                            pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            allPlanes.Add(TraversalPlane);
-                                            pDataList.Add(pData[1]);
-                                            counter++;
-
-                                            //move to loction above the current curve at the same Z height of TraversalPath
-                                            Point3d TraversalPathEnd = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, TraversalPath.Z);
-                                            Plane TraversalPathEndPlane = new Plane(TraversalPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
-                                            pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPathEndPlane, stopExtrude, 3.0f);
-                                            pData[2].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            allPlanes.Add(TraversalPathEndPlane);
-                                            pDataList.Add(pData[2]);
-                                            counter++;
-                                        }
-                                        else
-                                        {
-                                            pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
-                                            pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-
-                                            pDataList.Add(pData[0]);
-                                            counter++;
-
-                                            pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 3.0f);
-                                            pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                            pDataList.Add(pData[1]);
-                                            counter++;
-                                        }
-                                    }
-                                    catch (ArgumentOutOfRangeException)
-                                    {
-                                        pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
-                                        pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                        pData[0].Events["NozzleCooling"] = stopCooling;
-                                        pDataList.Add(pData[0]);
-                                        counter++;
-
-                                    }
-
-                                    //define the circle motion for the start of the extrusion
-                                    Circle circle = new Circle(pathStart, 1);
-
-                                    //doc.Objects.AddCircle(circle);
-                                    //doc.Views.Redraw();
-                                    int numPlanes = 10;
-                                    List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
-                                    //loop through the circle planes
-                                    for (int k = 0; k < circlePathPlanes.Count; k++)
-                                    {
-                                        Plane cirPath = circlePathPlanes[k];
-
-                                        pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
-                                        pData[2].Events["Extrude"] = extrude;
-                                        pData[2].AxisStates["E5"] = new SMT.AxisState(2.4);
-
-                                        pDataList.Add(pData[2]);
-                                        allPlanes.Add(cirPath);
-                                        counter++;
-                                    }
-
-
-                                    pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
-                                    pData[3].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                    pDataList.Add(pData[3]);
-                                    counter++;
-
-
-                                    
-                                    // Loop through each plane in the list
-                                    for (int l = 0; l < planeInterpolation.Count; l++)
-                                    {
-                                        if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
-                                        double percentPath = (80.0 / 100.0) * numCrvPathPlanes;
-                                        Plane path = planeInterpolation[l];
-                                        //if the plane is the last plane of the curve
-                                        if (l > percentPath)
-                                        {
-
-                                            pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
-                                            pData[4].AxisStates["E5"] = new SMT.AxisState(1.4);
-
-                                        }
-                                        else
-                                        {
-
-                                            pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
-                                            pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
-
-
-                                        }
-                                        //pData[4].AxisStates["E5"] = axisStateE5;
-                                        printedPath.Add(segments[i]);
-                                        pDataList.Add(pData[4]);
-                                        allPlanes.Add(path);
-                                        counter++;
-                                    }
-
-                                    //define the circle motion for the end of the extrusion
-                                    Circle endCircle = new Circle(crvEnd, 5);
-
-                                    //doc.Objects.AddCircle(circle);
-                                    //doc.Views.Redraw();
-                                    int endNumPlanes = 10;
-                                    List<Plane> endCirclePathPlanes = DivideCurveIntoPlanes(endCircle.ToNurbsCurve(), endNumPlanes);
-                                    //loop through the circle planes
-                                    for (int k = 0; k < endCirclePathPlanes.Count; k++)
-                                    {
-                                        Plane endCirPath = endCirclePathPlanes[k];
-
-                                        pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, endCirPath, stopCooling, 0.2f);
-                                        pData[5].Events["Extrude"] = extrude;
-                                        pData[5].AxisStates["E5"] = new SMT.AxisState(1.8);
-
-                                        pDataList.Add(pData[5]);
-                                        allPlanes.Add(endCirPath);
-                                        counter++;
-                                    }
-                                        
-                                 
-                                }
-                            }
-
-                            if (lineDescriptor == "AngledDown")
-                            {
                                 //get the first and last plane of the curve
                                 Plane pathStart = crvPathPlanes[0];
                                 Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
-                                Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
-                                pathVector.Reverse();
-                                double angle = RhinoMath.ToRadians(-5);
-                                pathVector.Rotate(angle, pathEnd.XAxis);
-
                                 double t = 0.5;
-                                Curve curve = segments[i];
+                                Curve curve =pathCurves[j];
                                 curve.Domain = new Interval(0, 1);
                                 Point3d pointOnCurve = curve.PointAt(t);
-                                Vector3d yAxis = curve.TangentAt(t);
+                                Vector3d tangent = curve.TangentAt(t);
+                                Vector3d zAxis = pathStart.Origin - pathEnd.Origin;
 
-                                yAxis.Unitize();
+                                zAxis.Unitize();
 
                                 // Step 2: Calculate the angle between Z-axis and world Z-axis in degrees
-                                Point3d projectedEndPt = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, pathEnd.Origin.Z); 
-                                Vector3d crvVec = pathStart.Origin - pathEnd.Origin; // Vector from end to start
-                                Vector3d projectedCrvVec = projectedEndPt - pathEnd.Origin;
+                                Point3d projectedEndPt = new Point3d(pathEnd.Origin.X, pathEnd.Origin.Y, pathStart.Origin.Z);
+                                Vector3d crvVec = pathEnd.Origin - pathStart.Origin;
+                                Vector3d projectedCrvVec = projectedEndPt - pathStart.Origin;
 
-                                double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec); // Angle between the curve and the projected curve
-                                angleToWorldZ = RhinoMath.ToDegrees(angleToWorldZ);
+                                double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec) * (180.0 / Math.PI);
+
                                 //If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
-                                if (angleToWorldZ > 45.0)
+                                if (angleToWorldZ < 45.0)
                                 {
                                     // Rotate zAxis to be at a 45-degree angle to the world Z-axis
-                                    double rotationAngle = angleToWorldZ - 35;  // Calculate the amount to rotate
-                                    Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(yAxis, Vector3d.ZAxis), pathStart.Origin);
-                                    yAxis.Transform(rotation);
+                                    double rotationAngle =  angleToWorldZ - 55;  // Calculate the amount to rotate
+                                    Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(zAxis, Vector3d.ZAxis), pathStart.Origin);
+                                    zAxis.Transform(rotation);
                                 }
 
                                 //Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
-                                Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, yAxis);
+                                Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, zAxis);
                                 xAxis.Unitize();
 
                                 // If the X-axis is zero (e.g., if Z-axis is vertical), use the world Y-axis as a fallback
                                 if (xAxis.IsZero)
                                 {
-                                    xAxis = Vector3d.CrossProduct(Vector3d.YAxis, yAxis);
+                                    xAxis = Vector3d.CrossProduct(Vector3d.YAxis, zAxis);
                                     xAxis.Unitize();
                                 }
 
@@ -914,90 +459,31 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 if (Math.Abs(xAxisDif) < 90)
                                 {
                                     xAxis = -xAxis;
-                                    yAxis = -yAxis;
                                 }
 
                                 //Calculate the Y-axis to complete the orthogonal system
-                                Vector3d zAxis = Vector3d.CrossProduct(yAxis, xAxis);
-                                zAxis.Unitize();
-
-                                //Construct the plane with the calculated axes
-                                Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
-                                Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
-                                Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
-
-                                //Get the plane orientation of the curve based on the start and end point
-                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(segments[i], planeAtStart, planeAtEnd, numCrvPathPlanes);
-
-                                //create the extrusion data
-                                
-                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, extrude, 1.0f);
-                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                pDataList.Add(pData[0]);
-                                counter++;
-                                
-                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
-                                pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                pDataList.Add(pData[1]);
-
-                                counter++;
-
-                                // Loop through each plane in the list
-                                for (int l = 0; l < planeInterpolation.Count; l++)
-                                {
-                                    if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
-
-                                    Plane path = planeInterpolation[l];
-                                    
-                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
-                                    pData[2].AxisStates["E5"] = new SMT.AxisState(1.2);
-
-                                    printedPath.Add(segments[i]);
-                                    pDataList.Add(pData[2]);
-                                    allPlanes.Add(path);
-                                    counter++;
-                                }
-                            }
-
-                            if (lineDescriptor == "Horizontal")
-                            {   
-
-                                //get the first and last plane of the curve
-                                Plane pathStart = crvPathPlanes[0];
-                                Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
-                                Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
-                                pathVector.Reverse();
-                                double angle = RhinoMath.ToRadians(-5);
-                                pathVector.Rotate(angle, pathEnd.XAxis);
-
-                                double t = 0.5;
-                                Curve curve = segments[i];
-                                curve.Domain = new Interval(0, 1);
-                                Point3d pointOnCurve = curve.PointAt(t);
-                                Vector3d tangent = curve.TangentAt(t);
-
-                                //Define the Y-axis along the direction of the curve
-                                Vector3d yAxis = tangent;
+                                Vector3d yAxis = Vector3d.CrossProduct(zAxis, xAxis);
                                 yAxis.Unitize();
 
-                                //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
-                                Vector3d zAxis = new Vector3d(0, 0, -1);
-
-
-                                //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
-                                Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
-                                xAxis.Unitize();
 
                                 //Construct the plane with the calculated axes
                                 Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
+                                Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
+                                Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
+
+
+
+                                //Get the plane orientation of the curve based on the start and end point
+                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(pathCurves[j], planeAtStart, planeAtEnd, numCrvPathPlanes);
+
+
+                                //create the extrusion data
 
                                 //define if the extrusion needs a traversal path by calculating the distance between the last curve end and the current curve start
                                 //if the distance is greater than 10mm, add a traversal path
-
-
                                 try
                                 {
-                                    Curve PrevPath = segments[i - 1];
+                                    Curve PrevPath = pathCurves[j - 1];
                                     Point3d PrevPathStart = PrevPath.PointAtStart;
                                     Plane TraversalPathEndPlaneStart = new Plane(PrevPathStart, xAxis, yAxis);
                                     Point3d PrevPathEnd = PrevPath.PointAtEnd;
@@ -1008,7 +494,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     //current curve is greater than 10mm, add a traversal path
                                     if (PrevPathEnd.DistanceTo(pathStart.Origin) > 10)
                                     {
-
+                                        
                                         pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlanePlaneEnd, stopExtrude, 3.0f);
                                         pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
                                         pData[0].Events["NozzleCooling"] = stopCooling;
@@ -1058,77 +544,752 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     counter++;
 
                                 }
+                                
+
+                                //define the circle motion for the start of the extrusion
+                                Circle circle = new Circle(pathStart, 1);
 
 
 
-                                //create the extrusion data
-                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
-                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                pDataList.Add(pData[0]);
-                                counter++;
-                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 1.0f);
-                                pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                pDataList.Add(pData[1]);
-                                counter++;
-
-                                // Loop through each plane in the list
-                                for (int l = 0; l < crvPathPlanes.Count; l++)
+                                //doc.Objects.AddCircle(circle);
+                                //doc.Views.Redraw();
+                                int numPlanes = 10;
+                                List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
+                                //loop through the circle planes
+                                for (int k = 0; k < circlePathPlanes.Count; k++)
                                 {
-                                    if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
-
-                                    Plane path = crvPathPlanes[l];
-
-                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 1.0f);
-                                    pData[2].AxisStates["E5"] = new SMT.AxisState(1.6);
+                                    Plane cirPath = circlePathPlanes[k];
+                                    
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
+                                    pData[2].Events["Extrude"] = extrude;
+                                    pData[2].AxisStates["E5"] = new SMT.AxisState(2.4);
 
                                     pDataList.Add(pData[2]);
-                                    allPlanes.Add(path);
+                                    allPlanes.Add(cirPath);
                                     counter++;
                                 }
-                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
+                                
+
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
                                 pData[3].AxisStates["E5"] = new SMT.AxisState(1.0);
                                 pDataList.Add(pData[3]);
                                 counter++;
-                                pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, cool, 1.0f);
-                                pData[4].AxisStates["E5"] = new SMT.AxisState(1.0);
 
-                                printedPath.Add(segments[i]);
-                                pDataList.Add(pData[4]);
-                                counter++;
 
-                            }
-
-                            if (lineDescriptor == "Vertical")
-                            {
-                                //get the first and last plane of the curve
-                                Plane pathStart = crvPathPlanes[0];
-                                Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
-                                //create the extrusion data
-                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 1.0f);
-                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                pDataList.Add(pData[0]);
-                                counter++;
-                                pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 1.0f);
-                                pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                pDataList.Add(pData[1]);
-                                counter++;
 
                                 // Loop through each plane in the list
-                                for (int l = 0; l < crvPathPlanes.Count; l++)
+                                for (int l = 0; l < planeInterpolation.Count; l++)
                                 {
-                                    if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
+                                    if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
+                                    double percentPath = (80.0 / 100.0) * numCrvPathPlanes;
+                                    Plane path = planeInterpolation[l];
+                                    //if the plane is the last plane of the curve
+                                    if (l > percentPath)
+                                    {
+                                        
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
+                                        pData[4].AxisStates["E5"] = new SMT.AxisState(1.4);
 
-                                    Plane path = crvPathPlanes[l];
+                                    }
+                                    else
+                                    {
+                                        
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
+                                        pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
 
-                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.5f);
-                                    pData[2].AxisStates["E5"] = new SMT.AxisState(1.3);
 
-                                    printedPath.Add(segments[i]);
-                                    pDataList.Add(pData[2]);
+                                    }
+                                    //pData[4].AxisStates["E5"] = axisStateE5;
+                                    printedPath.Add(pathCurves[j]);
+                                    pDataList.Add(pData[4]);
                                     allPlanes.Add(path);
                                     counter++;
                                 }
+
+                                //New code for the leadout and traversal path
+                                //
+
+                                //leave this code for the last plane on the last segment in the polyline curve
+                                //pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
+                                //pDataList.Add(pData[5]);
+                                //counter++;
+                                //pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
+                                //pDataList.Add(pData[6]);
+                                //counter++;
                             }
+                            else
+                            {
+                                //path modification to account for intersection with the unsupported curve
+
+                                    
+
+                                double t = 0.5;
+                                Curve curve =pathCurves[j];
+                                curve.Domain = new Interval(0, 1);
+                                Point3d pointOnCurve = curve.PointAt(t);
+                                Vector3d tangent = curve.TangentAt(t);
+                                    
+
+                                //path modification
+                                Point3d crvStart = curve.PointAtStart;
+                                Point3d crvEnd = curve.PointAtEnd;
+                                // Convert degrees to radians
+                                double angleRadians = RhinoMath.ToRadians(22.5);
+
+                                // Create a rotation transformation
+                                Transform crvRotation = Transform.Rotation(angleRadians, Vector3d.ZAxis, crvStart);
+                                Curve rotatedCrv = curve.DuplicateCurve();
+                                rotatedCrv.Transform(crvRotation);
+                                Point3d newEnd = rotatedCrv.PointAtEnd;
+                                Curve pathModified = new LineCurve(crvStart, newEnd);
+                                    
+                                //get the planes for each path
+                                int numPathModifiedPlanes = 10;
+                                    
+                                List<Plane> pathModifiedPlanes = DivideCurveIntoPlanes(pathModified, numPathModifiedPlanes);
+                                //get the first and last plane of the curve
+                                Plane pathStart = pathModifiedPlanes[0];
+                                Plane pathEnd = pathModifiedPlanes[pathModifiedPlanes.Count - 1];
+                                Vector3d zAxis = pathStart.Origin - pathEnd.Origin;
+
+
+                                zAxis.Unitize();
+
+                                // Step 2: Calculate the angle between Z-axis and world Z-axis in degrees
+                                Point3d projectedEndPt = new Point3d(pathEnd.Origin.X, pathEnd.Origin.Y, pathStart.Origin.Z);
+                                Vector3d crvVec = pathEnd.Origin - pathStart.Origin;
+                                Vector3d projectedCrvVec = projectedEndPt - pathStart.Origin;
+
+                                double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec) * (180.0 / Math.PI);
+
+                                //If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
+                                if (angleToWorldZ < 45.0)
+                                {
+                                    // Rotate zAxis to be at a 45-degree angle to the world Z-axis
+                                    double rotationAngle = angleToWorldZ - 55;  // Calculate the amount to rotate
+                                    Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(zAxis, Vector3d.ZAxis), pathStart.Origin);
+                                    zAxis.Transform(rotation);
+                                }
+
+                                //Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
+                                Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, zAxis);
+                                xAxis.Unitize();
+
+                                // If the X-axis is zero (e.g., if Z-axis is vertical), use the world Y-axis as a fallback
+                                if (xAxis.IsZero)
+                                {
+                                    xAxis = Vector3d.CrossProduct(Vector3d.YAxis, zAxis);
+                                    xAxis.Unitize();
+                                }
+
+                                //Rotate X-axis by 180 degrees around Z-axis by negating it
+                                double xAxisDif = Vector3d.VectorAngle(xAxis, Vector3d.XAxis) * (180.0 / Math.PI);
+
+                                if (Math.Abs(xAxisDif) < 90)
+                                {
+                                    xAxis = -xAxis;
+                                }
+
+                                //Calculate the Y-axis to complete the orthogonal system
+                                Vector3d yAxis = Vector3d.CrossProduct(zAxis, xAxis);
+                                yAxis.Unitize();
+
+
+                                //Construct the plane with the calculated axes
+                                Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
+                                Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
+
+                                //Get the plane orientation of the curve based on the start and end point
+                                List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(pathModified, planeAtStart, planeAtEnd, numCrvPathPlanes);
+
+
+                                //create the extrusion data
+
+                                //define if the extrusion needs a traversal path by calculating the distance between the last curve end and the current curve start
+                                //if the distance is greater than 10mm, add a traversal path
+
+
+                                try
+                                {
+                                    Curve PrevPath = pathCurves[j - 1];
+                                    Point3d PrevPathStart = PrevPath.PointAtStart;
+                                    Plane TraversalPathEndPlaneStart = new Plane(PrevPathStart, xAxis, yAxis);
+                                    Point3d PrevPathEnd = PrevPath.PointAtEnd;
+                                    Plane TraversalPlanePlaneEnd = new Plane(PrevPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+
+
+                                    //if the distance between the end of the previous curve and the start of the
+                                    //current curve is greater than 10mm, add a traversal path
+                                    if (PrevPathEnd.DistanceTo(pathStart.Origin) > 10)
+                                    {
+
+                                        pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlanePlaneEnd, stopExtrude, 3.0f);
+                                        pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                        pData[0].Events["NozzleCooling"] = stopCooling;
+                                        allPlanes.Add(TraversalPlanePlaneEnd);
+                                        pDataList.Add(pData[0]);
+                                        counter++;
+
+                                        //create traversal path
+                                        //move end point 10mm vertically
+                                        Point3d TraversalPath = new Point3d(PrevPathEnd.X, PrevPathEnd.Y, PrevPathEnd.Z + 20);
+                                        Plane TraversalPlane = new Plane(TraversalPath, -Vector3d.XAxis, Vector3d.YAxis);
+                                        pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlane, 3.0f);
+                                        pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                        allPlanes.Add(TraversalPlane);
+                                        pDataList.Add(pData[1]);
+                                        counter++;
+
+                                        //move to loction above the current curve at the same Z height of TraversalPath
+                                        Point3d TraversalPathEnd = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, TraversalPath.Z);
+                                        Plane TraversalPathEndPlane = new Plane(TraversalPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+                                        pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPathEndPlane, stopExtrude, 3.0f);
+                                        pData[2].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                        allPlanes.Add(TraversalPathEndPlane);
+                                        pDataList.Add(pData[2]);
+                                        counter++;
+                                    }
+                                    else
+                                    {
+                                        pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                        pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+
+                                        pDataList.Add(pData[0]);
+                                        counter++;
+
+                                        pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 3.0f);
+                                        pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                        pDataList.Add(pData[1]);
+                                        counter++;
+                                    }
+                                }
+                                catch (ArgumentOutOfRangeException)
+                                {
+                                    pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                    pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pData[0].Events["NozzleCooling"] = stopCooling;
+                                    pDataList.Add(pData[0]);
+                                    counter++;
+
+                                }
+
+                                //define the circle motion for the start of the extrusion
+                                Circle circle = new Circle(pathStart, 1);
+
+                                //doc.Objects.AddCircle(circle);
+                                //doc.Views.Redraw();
+                                int numPlanes = 10;
+                                List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
+                                //loop through the circle planes
+                                for (int k = 0; k < circlePathPlanes.Count; k++)
+                                {
+                                    Plane cirPath = circlePathPlanes[k];
+
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
+                                    pData[2].Events["Extrude"] = extrude;
+                                    pData[2].AxisStates["E5"] = new SMT.AxisState(2.4);
+
+                                    pDataList.Add(pData[2]);
+                                    allPlanes.Add(cirPath);
+                                    counter++;
+                                }
+
+
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
+                                pData[3].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                pDataList.Add(pData[3]);
+                                counter++;
+
+
+                                    
+                                // Loop through each plane in the list
+                                for (int l = 0; l < planeInterpolation.Count; l++)
+                                {
+                                    if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
+                                    double percentPath = (80.0 / 100.0) * numCrvPathPlanes;
+                                    Plane path = planeInterpolation[l];
+                                    //if the plane is the last plane of the curve
+                                    if (l > percentPath)
+                                    {
+
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
+                                        pData[4].AxisStates["E5"] = new SMT.AxisState(2);
+
+                                    }
+                                    else
+                                    {
+
+                                        pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
+                                        pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
+
+
+                                    }
+                                    //pData[4].AxisStates["E5"] = axisStateE5;
+                                    printedPath.Add(pathCurves[j]);
+                                    pDataList.Add(pData[4]);
+                                    allPlanes.Add(path);
+                                    counter++;
+                                }
+
+                                //define the circle motion for the end of the extrusion
+                                Circle endCircle = new Circle(crvEnd, 5);
+
+                                //doc.Objects.AddCircle(circle);
+                                //doc.Views.Redraw();
+                                int endNumPlanes = 10;
+                                List<Plane> endCirclePathPlanes = DivideCurveIntoPlanes(endCircle.ToNurbsCurve(), endNumPlanes);
+                                //loop through the circle planes
+                                for (int k = 0; k < endCirclePathPlanes.Count; k++)
+                                {
+                                    Plane endCirPath = endCirclePathPlanes[k];
+
+                                    pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, endCirPath, stopCooling, 0.2f);
+                                    pData[5].Events["Extrude"] = extrude;
+                                    pData[5].AxisStates["E5"] = new SMT.AxisState(1.8);
+
+                                    pDataList.Add(pData[5]);
+                                    allPlanes.Add(endCirPath);
+                                    counter++;
+                                }
+                                        
+                                 
+                            }
+                        }
+
+                        if (lineDescriptor == "AngledDown")
+                        {
+                            //get the first and last plane of the curve
+                            Plane pathStart = crvPathPlanes[0];
+                            Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                            Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
+                            pathVector.Reverse();
+                            double angle = RhinoMath.ToRadians(-5);
+                            pathVector.Rotate(angle, pathEnd.XAxis);
+
+                            double t = 0.5;
+                            Curve curve =pathCurves[j];
+                            curve.Domain = new Interval(0, 1);
+                            Point3d pointOnCurve = curve.PointAt(t);
+                            Vector3d yAxis = curve.TangentAt(t);
+
+                            yAxis.Unitize();
+
+                            // Step 2: Calculate the angle between Z-axis and world Z-axis in degrees
+                            Point3d projectedEndPt = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, pathEnd.Origin.Z); 
+                            Vector3d crvVec = pathStart.Origin - pathEnd.Origin; // Vector from end to start
+                            Vector3d projectedCrvVec = projectedEndPt - pathEnd.Origin;
+
+                            double angleToWorldZ = Vector3d.VectorAngle(crvVec, projectedCrvVec); // Angle between the curve and the projected curve
+                            angleToWorldZ = RhinoMath.ToDegrees(angleToWorldZ);
+                            //If the angle is less than 45 degrees, adjust Z-axis to be capped at 45 degrees
+                            if (angleToWorldZ > 45.0)
+                            {
+                                // Rotate zAxis to be at a 45-degree angle to the world Z-axis
+                                double rotationAngle = angleToWorldZ - 35;  // Calculate the amount to rotate
+                                Transform rotation = Transform.Rotation(rotationAngle * (Math.PI / 180.0), Vector3d.CrossProduct(yAxis, Vector3d.ZAxis), pathStart.Origin);
+                                yAxis.Transform(rotation);
+                            }
+
+                            //Calculate the initial X-axis to be perpendicular to Z and aligned to the "left" of the curve direction
+                            Vector3d xAxis = Vector3d.CrossProduct(Vector3d.ZAxis, yAxis);
+                            xAxis.Unitize();
+
+                            // If the X-axis is zero (e.g., if Z-axis is vertical), use the world Y-axis as a fallback
+                            if (xAxis.IsZero)
+                            {
+                                xAxis = Vector3d.CrossProduct(Vector3d.YAxis, yAxis);
+                                xAxis.Unitize();
+                            }
+
+                            //Rotate X-axis by 180 degrees around Z-axis by negating it
+                            double xAxisDif = Vector3d.VectorAngle(xAxis, Vector3d.XAxis) * (180.0 / Math.PI);
+
+                            if (Math.Abs(xAxisDif) < 90)
+                            {
+                                xAxis = -xAxis;
+                                yAxis = -yAxis;
+                            }
+
+                            //Calculate the Y-axis to complete the orthogonal system
+                            Vector3d zAxis = Vector3d.CrossProduct(yAxis, xAxis);
+                            zAxis.Unitize();
+
+                            //Construct the plane with the calculated axes
+                            Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
+                            Plane planeAtStart = new Plane(pathStart.Origin, xAxis, yAxis);
+                            Plane planeAtEnd = new Plane(pathEnd.Origin, xAxis, yAxis);
+
+                            //Get the plane orientation of the curve based on the start and end point
+                            List<Plane> planeInterpolation = Quaternion_interpolation.interpolation(pathCurves[j], planeAtStart, planeAtEnd, numCrvPathPlanes);
+
+                            //define if the extrusion needs a traversal path by calculating the distance between the last curve end and the current curve start
+                            //if the distance is greater than 10mm, add a traversal path
+                            try
+                            {
+                                Curve PrevPath = pathCurves[j - 1];
+                                Point3d PrevPathStart = PrevPath.PointAtStart;
+                                Plane TraversalPathEndPlaneStart = new Plane(PrevPathStart, xAxis, yAxis);
+                                Point3d PrevPathEnd = PrevPath.PointAtEnd;
+                                Plane TraversalPlanePlaneEnd = new Plane(PrevPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+
+
+                                //if the distance between the end of the previous curve and the start of the
+                                //current curve is greater than 10mm, add a traversal path
+                                if (PrevPathEnd.DistanceTo(pathStart.Origin) > 10)
+                                {
+
+                                    pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlanePlaneEnd, stopExtrude, 3.0f);
+                                    pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pData[0].Events["NozzleCooling"] = stopCooling;
+                                    allPlanes.Add(TraversalPlanePlaneEnd);
+                                    pDataList.Add(pData[0]);
+                                    counter++;
+
+                                    //create traversal path
+                                    //move end point 10mm vertically
+                                    Point3d TraversalPath = new Point3d(PrevPathEnd.X, PrevPathEnd.Y, PrevPathEnd.Z + 20);
+                                    Plane TraversalPlane = new Plane(TraversalPath, -Vector3d.XAxis, Vector3d.YAxis);
+                                    pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlane, 2.0f);
+                                    pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    allPlanes.Add(TraversalPlane);
+                                    pDataList.Add(pData[1]);
+                                    counter++;
+
+                                    //move to loction above the current curve at the same Z height of TraversalPath
+                                    Point3d TraversalPathEnd = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, TraversalPath.Z);
+                                    Plane TraversalPathEndPlane = new Plane(TraversalPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPathEndPlane, stopExtrude, 3.0f);
+                                    pData[2].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    allPlanes.Add(TraversalPathEndPlane);
+                                    pDataList.Add(pData[2]);
+                                    counter++;
+                                }
+                                else
+                                {
+                                    pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                    pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+
+                                    pDataList.Add(pData[0]);
+                                    counter++;
+
+                                    pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 3.0f);
+                                    pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pDataList.Add(pData[1]);
+                                    counter++;
+                                }
+                            }
+                            catch (ArgumentOutOfRangeException)
+                            {
+                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                pData[0].Events["NozzleCooling"] = stopCooling;
+                                pDataList.Add(pData[0]);
+                                counter++;
+
+                            }
+
+                            //create the extrusion data
+
+                            pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, extrude, 1.0f);
+                            pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                            pDataList.Add(pData[0]);
+                            counter++;
+                                
+                            pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
+                            pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                            pDataList.Add(pData[1]);
+
+                            counter++;
+
+                            // Loop through each plane in the list
+                            for (int l = 0; l < planeInterpolation.Count; l++)
+                            {
+                                if (planeInterpolation[l] == null || !planeInterpolation[l].IsValid) continue;
+
+                                Plane path = planeInterpolation[l];
+                                    
+                                pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
+                                pData[2].AxisStates["E5"] = new SMT.AxisState(1.2);
+
+                                printedPath.Add(pathCurves[j]);
+                                pDataList.Add(pData[2]);
+                                allPlanes.Add(path);
+                                counter++;
+                            }
+                        }
+
+                        if (lineDescriptor == "Horizontal")
+                        {   
+
+                            //get the first and last plane of the curve
+                            Plane pathStart = crvPathPlanes[0];
+                            Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                            Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
+                            pathVector.Reverse();
+                            double angle = RhinoMath.ToRadians(-5);
+                            pathVector.Rotate(angle, pathEnd.XAxis);
+
+                            double t = 0.5;
+                            Curve curve = pathCurves[j];
+                            curve.Domain = new Interval(0, 1);
+                            Point3d pointOnCurve = curve.PointAt(t);
+                            Vector3d tangent = curve.TangentAt(t);
+
+                            //Define the Y-axis along the direction of the curve
+                            Vector3d yAxis = tangent;
+                            yAxis.Unitize();
+
+                            //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
+                            Vector3d zAxis = new Vector3d(0, 0, -1);
+
+
+                            //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
+                            Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
+                            xAxis.Unitize();
+
+                            //Construct the plane with the calculated axes
+                            Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
+
+                            //define if the extrusion needs a traversal path by calculating the distance between the last curve end and the current curve start
+                            //if the distance is greater than 10mm, add a traversal path
+
+
+                            try
+                            {
+                                Curve PrevPath = pathCurves[j - 1];
+                                Point3d PrevPathStart = PrevPath.PointAtStart;
+                                Plane TraversalPathEndPlaneStart = new Plane(PrevPathStart, xAxis, yAxis);
+                                Point3d PrevPathEnd = PrevPath.PointAtEnd;
+                                Plane TraversalPlanePlaneEnd = new Plane(PrevPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+
+
+                                //if the distance between the end of the previous curve and the start of the
+                                //current curve is greater than 10mm, add a traversal path
+                                if (PrevPathEnd.DistanceTo(pathStart.Origin) > 10)
+                                {
+
+                                    pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlanePlaneEnd, stopExtrude, 3.0f);
+                                    pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pData[0].Events["NozzleCooling"] = stopCooling;
+                                    allPlanes.Add(TraversalPlanePlaneEnd);
+                                    pDataList.Add(pData[0]);
+                                    counter++;
+
+                                    //create traversal path
+                                    //move end point 10mm vertically
+                                    Point3d TraversalPath = new Point3d(PrevPathEnd.X, PrevPathEnd.Y, PrevPathEnd.Z + 20);
+                                    Plane TraversalPlane = new Plane(TraversalPath, -Vector3d.XAxis, Vector3d.YAxis);
+                                    pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlane, 2.0f);
+                                    pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    allPlanes.Add(TraversalPlane);
+                                    pDataList.Add(pData[1]);
+                                    counter++;
+
+                                    //move to loction above the current curve at the same Z height of TraversalPath
+                                    Point3d TraversalPathEnd = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, TraversalPath.Z);
+                                    Plane TraversalPathEndPlane = new Plane(TraversalPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPathEndPlane, stopExtrude, 3.0f);
+                                    pData[2].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    allPlanes.Add(TraversalPathEndPlane);
+                                    pDataList.Add(pData[2]);
+                                    counter++;
+                                }
+                                else
+                                {
+                                    pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                    pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+
+                                    pDataList.Add(pData[0]);
+                                    counter++;
+
+                                    pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 3.0f);
+                                    pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pDataList.Add(pData[1]);
+                                    counter++;
+                                }
+                            }
+                            catch (ArgumentOutOfRangeException)
+                            {
+                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                pData[0].Events["NozzleCooling"] = stopCooling;
+                                pDataList.Add(pData[0]);
+                                counter++;
+
+                            }
+
+
+
+                            
+
+                            // Loop through each plane in the list
+                            for (int l = 0; l < crvPathPlanes.Count; l++)
+                            {
+                                if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
+
+                                Plane path = crvPathPlanes[l];
+
+                                pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 1.0f);
+                                pData[2].Events["Extrude"] = extrude;
+                                pData[2].Events["NozzleCooling"] = stopCooling;
+                                pData[2].AxisStates["E5"] = new SMT.AxisState(1.6);
+
+                                pDataList.Add(pData[2]);
+                                allPlanes.Add(path);
+                                counter++;
+                            }
+                            pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
+                            pData[3].AxisStates["E5"] = new SMT.AxisState(1.0);
+                            pDataList.Add(pData[3]);
+                            counter++;
+                            pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, cool, 1.0f);
+                            pData[4].AxisStates["E5"] = new SMT.AxisState(1.0);
+
+                            printedPath.Add(pathCurves[j]);
+                            pDataList.Add(pData[4]);
+                            counter++;
+
+                        }
+
+                        if (lineDescriptor == "Vertical")
+                        {
+                            //get the first and last plane of the curve
+                            Plane pathStart = crvPathPlanes[0];
+                            Plane pathEnd = crvPathPlanes[crvPathPlanes.Count - 1];
+                            Vector3d pathVector = pathStart.Origin - pathEnd.Origin;
+                            pathVector.Reverse();
+                            double angle = RhinoMath.ToRadians(-5);
+                            pathVector.Rotate(angle, pathEnd.XAxis);
+
+                            double t = 0.5;
+                            Curve curve = pathCurves[j];
+                            curve.Domain = new Interval(0, 1);
+                            Point3d pointOnCurve = curve.PointAt(t);
+                            Vector3d tangent = curve.TangentAt(t);
+
+                            //Define the Y-axis along the direction of the curve
+                            Vector3d yAxis = tangent;
+                            yAxis.Unitize();
+
+                            //Define the Z-axis perpendicular to the curve direction using a cross product with the world Z-axis
+                            Vector3d zAxis = new Vector3d(0, 0, -1);
+
+
+                            //Calculate the X-axis using the cross product of Y and Z to ensure a right-handed coordinate system
+                            Vector3d xAxis = Vector3d.CrossProduct(yAxis, zAxis);
+                            xAxis.Unitize();
+
+                            //Construct the plane with the calculated axes
+                            Plane plane = new Plane(pointOnCurve, xAxis, yAxis);
+
+                            //define if the extrusion needs a traversal path by calculating the distance between the last curve end and the current curve start
+                            //if the distance is greater than 10mm, add a traversal path
+                            try
+                            {
+                                Curve PrevPath = pathCurves[j - 1];
+                                Point3d PrevPathStart = PrevPath.PointAtStart;
+                                Plane TraversalPathEndPlaneStart = new Plane(PrevPathStart, xAxis, yAxis);
+                                Point3d PrevPathEnd = PrevPath.PointAtEnd;
+                                Plane TraversalPlanePlaneEnd = new Plane(PrevPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+
+
+                                //if the distance between the end of the previous curve and the start of the
+                                //current curve is greater than 10mm, add a traversal path
+                                if (PrevPathEnd.DistanceTo(pathStart.Origin) > 10)
+                                {
+
+                                    pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlanePlaneEnd, stopExtrude, 3.0f);
+                                    pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pData[0].Events["NozzleCooling"] = stopCooling;
+                                    allPlanes.Add(TraversalPlanePlaneEnd);
+                                    pDataList.Add(pData[0]);
+                                    counter++;
+
+                                    //create traversal path
+                                    //move end point 10mm vertically
+                                    Point3d TraversalPath = new Point3d(PrevPathEnd.X, PrevPathEnd.Y, PrevPathEnd.Z + 20);
+                                    Plane TraversalPlane = new Plane(TraversalPath, -Vector3d.XAxis, Vector3d.YAxis);
+                                    pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPlane, 2.0f);
+                                    pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    allPlanes.Add(TraversalPlane);
+                                    pDataList.Add(pData[1]);
+                                    counter++;
+
+                                    //move to loction above the current curve at the same Z height of TraversalPath
+                                    Point3d TraversalPathEnd = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, TraversalPath.Z);
+                                    Plane TraversalPathEndPlane = new Plane(TraversalPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
+                                    pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPathEndPlane, stopExtrude, 3.0f);
+                                    pData[2].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    allPlanes.Add(TraversalPathEndPlane);
+                                    pDataList.Add(pData[2]);
+                                    counter++;
+                                }
+                                else
+                                {
+                                    pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                    pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+
+                                    pDataList.Add(pData[0]);
+                                    counter++;
+
+                                    pData[1] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 3.0f);
+                                    pData[1].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pDataList.Add(pData[1]);
+                                    counter++;
+                                }
+                            }
+                            catch (ArgumentOutOfRangeException)
+                            {
+                                pData[0] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 3.0f);
+                                pData[0].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                pData[0].Events["NozzleCooling"] = stopCooling;
+                                pDataList.Add(pData[0]);
+                                counter++;
+
+                            }
+
+
+                            //define the circle motion for the start of the extrusion
+                            Circle circle = new Circle(pathStart, 1);
+
+                            //doc.Objects.AddCircle(circle);
+                            //doc.Views.Redraw();
+                            int numPlanes = 10;
+                            List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
+                            
+                            //loop through the circle planes
+                            for (int k = 0; k < circlePathPlanes.Count; k++)
+                            {
+                                Plane cirPath = circlePathPlanes[k];
+
+                                pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
+                                pData[2].Events["Extrude"] = extrude;
+                                pData[2].Events["NozzleCooling"] = stopCooling;
+                                pData[2].AxisStates["E5"] = new SMT.AxisState(2.4);
+
+                                pDataList.Add(pData[2]);
+                                allPlanes.Add(cirPath);
+                                counter++;
+                            } 
+
+                            // Loop through each plane in the list
+                            for (int l = 0; l < crvPathPlanes.Count; l++)
+                            {
+                                if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
+
+                                Plane path = crvPathPlanes[l];
+
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.5f);
+                                pData[3].Events["Extrude"] = extrude;
+                                pData[3].Events["NozzleCooling"] = cool;
+                                pData[3].AxisStates["E5"] = new SMT.AxisState(2.4);
+
+                                printedPath.Add(pathCurves[j]);
+                                pDataList.Add(pData[3]);
+                                allPlanes.Add(path);
+                                counter++;
+                            }
+                            
                         }
                     }
                             //pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
