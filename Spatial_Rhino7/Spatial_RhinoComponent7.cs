@@ -247,6 +247,30 @@ namespace Spatial_Rhino7
                 return check;
             }
 
+            public static int connectivityNodeCount(List<Point> points, Curve currentCrv)
+                {
+                int count = 0;
+
+                if (points.Count == 0)
+                {
+                    count = 0;
+                }
+                else
+                {
+                    for (int i = 0; i < points.Count; i++)
+                    {
+                        //if the currentCrv end point is equal to the point in the list add 1 to the count
+                        if (points[i].Location == currentCrv.PointAtEnd)
+                        {
+                            count++;
+                        }
+                    }
+                }
+
+                return count;
+            }
+            
+
             public static String OrientLine(Curve curve)
             {
                 double tolerance = 1.0;
@@ -345,7 +369,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     ActionState PauseAct = opUI.SuperOperationRef.GetActionState("CycleWait");
                     SuperActionUI actionPauseUI = opUI.ActionControls["CycleWait"];
                     actionPauseUI.StartValue = "0.0";
-                    actionPauseUI.EndValue = "1.0";
+                    actionPauseUI.EndValue = "5.0";
                     actionPauseUI.ActivationMode = ActivationStyle.PointData;
                     //extrude actionstates
                     SuperEvent extrude = new SuperEvent(extrudeAct, 0.0, EventType.Activate, true);
@@ -375,8 +399,13 @@ protected override void SolveInstance(IGH_DataAccess DA)
                     List<SMTPData> pDataList = new List<SMTPData>();
                     List<Curve> printedPath = new List<Curve>();
 
-                    SMTPData[] pData = new SMTPData[8];
+                    SMTPData[] pData = new SMTPData[9];
                     int counter = 0;
+
+                    //Keep track of start and end points that have been used in a list to create 
+                    //different path methosd for extrusion 
+
+
                     //loop through each path line or polyline 
                     for (int j = 0; j < pathCurves.Count; j++)
                     {
@@ -550,7 +579,10 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 //define the circle motion for the start of the extrusion
                                 Circle circle = new Circle(pathStart, 1);
 
-
+                                //start origin of extrusion path
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, 3.0f);
+                                pDataList.Add(pData[3]);
+                                counter++;
 
                                 //doc.Objects.AddCircle(circle);
                                 //doc.Views.Redraw();
@@ -561,9 +593,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 {
                                     Plane cirPath = circlePathPlanes[k];
                                     
-                                    pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
-                                    pData[3].Events["Extrude"] = extrude;
-                                    pData[3].AxisStates["E5"] = new SMT.AxisState(2.4);
+                                    pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
+                                    pData[4].Events["Extrude"] = extrude;
+                                    pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
 
                                     pDataList.Add(pData[3]);
                                     allPlanes.Add(cirPath);
@@ -571,8 +603,8 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 }
                                 
 
-                                pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
-                                pData[4].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
+                                pData[5].AxisStates["E5"] = new SMT.AxisState(1.0);
                                 pDataList.Add(pData[4]);
                                 counter++;
 
@@ -588,35 +620,26 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     if (l > percentPath)
                                     {
                                         
-                                        pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
-                                        pData[5].AxisStates["E5"] = new SMT.AxisState(1.4);
+                                        pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.2f);
+                                        pData[6].AxisStates["E5"] = new SMT.AxisState(1.4);
 
                                     }
                                     else
                                     {
                                         
-                                        pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
-                                        pData[5].AxisStates["E5"] = new SMT.AxisState(2.4);
+                                        pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
+                                        pData[6].AxisStates["E5"] = new SMT.AxisState(2.4);
 
 
                                     }
                                     //pData[4].AxisStates["E5"] = axisStateE5;
                                     printedPath.Add(pathCurves[j]);
-                                    pDataList.Add(pData[5]);
+                                    pDataList.Add(pData[6]);
                                     allPlanes.Add(path);
                                     counter++;
                                 }
 
-                                //New code for the leadout and traversal path
-                                //
-
-                                //leave this code for the last plane on the last segment in the polyline curve
-                                //pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopCooling, 1.0f);
-                                //pDataList.Add(pData[5]);
-                                //counter++;
-                                //pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 1.0f);
-                                //pDataList.Add(pData[6]);
-                                //counter++;
+                              
                             }
                             else
                             {
@@ -779,7 +802,10 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     counter++;
 
                                 }
-
+                                //start origin of extrusion path
+                                pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, 3.0f);
+                                pDataList.Add(pData[3]);
+                                counter++;
                                 //define the circle motion for the start of the extrusion
                                 Circle circle = new Circle(pathStart, 1);
 
@@ -792,18 +818,18 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 {
                                     Plane cirPath = circlePathPlanes[k];
 
-                                    pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, extrude, 0.2f);
-                                    pData[3].AxisStates["E5"] = new SMT.AxisState(2.4);
+                                    pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, extrude, 0.2f);
+                                    pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
 
-                                    pDataList.Add(pData[3]);
+                                    pDataList.Add(pData[4]);
                                     allPlanes.Add(cirPath);
                                     counter++;
                                 }
 
 
-                                pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
-                                pData[4].AxisStates["E5"] = new SMT.AxisState(1.0);
-                                pDataList.Add(pData[4]);
+                                pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtStart, cool, 1.0f);
+                                pData[5].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                pDataList.Add(pData[5]);
                                 counter++;
 
 
@@ -815,35 +841,38 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     double percentPath = (80.0 / 100.0) * numCrvPathPlanes;
                                     Plane path = planeInterpolation[l];
                                     //if the plane is the last plane of the curve
-                                    if (l > percentPath)
+                                    if (l < percentPath)
                                     {
 
-                                        pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
-                                        pData[5].AxisStates["E5"] = new SMT.AxisState(2);
+                                        pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
+                                        pData[6].AxisStates["E5"] = new SMT.AxisState(2);
 
                                     }
                                     else
+
                                     {
 
-                                        pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.4f);
-                                        pData[5].AxisStates["E5"] = new SMT.AxisState(2.4);
+                                        pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 1.0f);
+                                        pData[6].Events["NozzleCooling"] = stopCooling;
+                                        pData[6].Events["Extrude"] = stopExtrude;
+
 
 
                                     }
                                     //pData[4].AxisStates["E5"] = axisStateE5;
                                     printedPath.Add(pathCurves[j]);
-                                    pDataList.Add(pData[5]);
+                                    pDataList.Add(pData[6]);
                                     allPlanes.Add(path);
                                     counter++;
                                 }
-                                pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtEndUp, stopCooling, 1.0f);
-                                pData[6].AxisStates["E5"] = new SMT.AxisState(0.5);
-                                pDataList.Add(pData[6]);
-                                counter++;
-                                pData[7] = new SMTPData(counter, 0, 0, MoveType.Lin, crvEndPlane, 1.0f);
+                                pData[7] = new SMTPData(counter, 0, 0, MoveType.Lin, planeAtEndUp, stopCooling, 1.0f);
                                 pData[7].AxisStates["E5"] = new SMT.AxisState(0.5);
-                                
                                 pDataList.Add(pData[7]);
+                                counter++;
+                                pData[8] = new SMTPData(counter, 0, 0, MoveType.Lin, crvEndPlane, 1.0f);
+                                pData[8].AxisStates["E5"] = new SMT.AxisState(0.5);
+                                
+                                pDataList.Add(pData[8]);
                                 counter++;
                                 
 
@@ -1286,43 +1315,47 @@ protected override void SolveInstance(IGH_DataAccess DA)
                             //define the circle motion for the start of the extrusion
                             Circle circle = new Circle(pathStart,3);
 
+                            pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, 3.0f);
+                            pDataList.Add(pData[3]);
+                            counter++;
+
                             //doc.Objects.AddCircle(circle);
                             //doc.Views.Redraw();
                             int numPlanes = 10;
                             List<Plane> circlePathPlanes = DivideCurveIntoPlanes(circle.ToNurbsCurve(), numPlanes);
-                            pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 0.2f);
-                            pDataList.Add(pData[2]);
+                            pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, extrude, 0.2f);
+                            pDataList.Add(pData[4]);
                             //loop through the circle planes
                             for (int k = 0; k < circlePathPlanes.Count; k++)
                             {
                                 Plane cirPath = circlePathPlanes[k];
 
-                                pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.2f);
-                                pData[2].AxisStates["E5"] = new SMT.AxisState(2.4);
+                                pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, cirPath, 0.15f);
+                                pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
 
-                                pDataList.Add(pData[2]);
+                                pDataList.Add(pData[4]);
                                 allPlanes.Add(cirPath);
                                 counter++;
                             }
 
 
-                            pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 1.0f);
-                            pData[3].Events["NozzleCooling"] = cool;
-                            pData[3].Events["Extrude"] = extrude;
-                            pDataList.Add(pData[3]);
+                            pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopExtrude, 1.0f);
+                            pData[5].Events["NozzleCooling"] = cool;
+                            pData[5].Events["Extrude"] = extrude;
+                            pDataList.Add(pData[5]);
 
                             // Loop through each plane in the list
-                            for (int l = 0; l < crvPathPlanes.Count; l++)
+                            for (int l = 0; l < crvPathPlanes.Count - 2; l++)
                             {
                                 if (crvPathPlanes[l] == null || !crvPathPlanes[l].IsValid) continue;
 
                                 Plane path = crvPathPlanes[l];
 
-                                pData[4] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.5f);
-                                pData[4].AxisStates["E5"] = new SMT.AxisState(2.4);
+                                pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, crvPathPlanes[l], 0.15f);
+                                pData[6].AxisStates["E5"] = new SMT.AxisState(2.4);
 
                                 printedPath.Add(pathCurves[j]);
-                                pDataList.Add(pData[4]);
+                                pDataList.Add(pData[6]);
                                 allPlanes.Add(path);
                                 counter++;
 
@@ -1333,27 +1366,12 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                             //doc.Objects.AddCircle(circle);
                             //doc.Views.Redraw();
-                            int endNumPlanes = 10;
-                            List<Plane> endCirclePathPlanes = DivideCurveIntoPlanes(endCircle.ToNurbsCurve(), endNumPlanes);
-                            //loop through the circle planes
-                            pData[5] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 0.4f);
-                            pData[5].Events["NozzleCooling"] = stopCooling;
-                            pDataList.Add(pData[5]);
+                            pData[7] = new SMTPData(counter, 0, 0, MoveType.Lin, pathEnd, stopExtrude, 0.02f);
+                            pData[7].Events["NozzleCooling"] = stopCooling;
+                            pDataList.Add(pData[7]);
                             counter++;
 
-
-                            for (int k = 0; k < endCirclePathPlanes.Count; k++)
-                            {
-                                Plane endCirPath = endCirclePathPlanes[k];
-
-                                pData[6] = new SMTPData(counter, 0, 0, MoveType.Lin, endCirPath, 0.4f);
-                                
-                                pData[6].AxisStates["E5"] = new SMT.AxisState(1.8);
-
-                                pDataList.Add(pData[6]);
-                                allPlanes.Add(endCirPath);
-                                counter++;
-                            }
+                            
 
                         }
                     }

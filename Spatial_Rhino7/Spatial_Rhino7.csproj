@@ -18,6 +18,9 @@
       <EmbedInteropTypes></EmbedInteropTypes>
       <SpecificVersion></SpecificVersion>
     </Reference>
+    <Reference Include="KarambaCommon">
+      <HintPath>..\..\..\..\..\..\Program Files\Rhino 8\Plug-ins\Karamba\karambaCommon.dll</HintPath>
+    </Reference>
     <Reference Include="RhinoCommon">
       <HintPath>..\..\..\..\..\..\Program Files\Rhino 7\System\RhinoCommon.dll</HintPath>
       <Private>False</Private>
