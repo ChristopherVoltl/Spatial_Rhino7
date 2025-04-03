@@ -4,9 +4,7 @@ using Rhino;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
 using System.Linq;
-using Karamba;
-using Karamba.Models;
-using Karamba.Elements;
+
 
 namespace Spatial_Rhino7.Spatial_Printing_Components
 {
@@ -47,6 +45,9 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
         public class KarambaTensionCompressionOptimizer
         {
             //add 
+            
+            
+           
         }
 
 
