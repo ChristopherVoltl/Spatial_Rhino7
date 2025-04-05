@@ -368,7 +368,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                     ActionState PauseAct = opUI.SuperOperationRef.GetActionState("CycleWait");
                     SuperActionUI actionPauseUI = opUI.ActionControls["CycleWait"];
-                    actionPauseUI.StartValue = "3.0";
+                    actionPauseUI.StartValue = "6.0";
                     actionPauseUI.ActivationMode = ActivationStyle.PointData;
                     //extrude actionstates
                     SuperEvent extrude = new SuperEvent(extrudeAct, 0.0, EventType.Activate, true);
@@ -464,17 +464,23 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 //Get the parameter to start the circle motion 2mm above pathstart
                                 double startExtruding = 2.0;
 
+                                //get start extruding point 2mm above the start of the curve in the Z direction
+                                Point3d startExtruding_pt = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, pathStart.Origin.Z + startExtruding);
                                 //get the parameter of the curve at the startExtruding length
-                                curve.LengthParameter(startExtruding, out double startExtrudeParam);
-                                Point3d startExtruding_pt = curve.PointAt(startExtrudeParam);
+                                //curve.LengthParameter(startExtruding, out double startExtrudeParam);
+                                //Point3d startExtruding_pt = curve.PointAt(startExtrudeParam);
+
+                                //new curve from startExtruding_pt to pathEnd
+                                Curve pathModified = new LineCurve(startExtruding_pt, pathEnd.Origin);
+
 
                                 //get the parameter of the curve at the startCooling length
-                                curve.LengthParameter(startCooling, out double startCoolingParam);
-                                Point3d startCooling_pt = curve.PointAt(startCoolingParam);
+                                pathModified.LengthParameter(startCooling, out double startCoolingParam);
+                                Point3d startCooling_pt = pathModified.PointAt(startCoolingParam);
 
                                 //get the parameter of the curve at the stopExtruding length
-                                curve.LengthParameter(stopExtruding, out double stopExtrudeParam);
-                                Point3d stopExtruding_pt = curve.PointAt(stopExtrudeParam);
+                                pathModified.LengthParameter(stopExtruding, out double stopExtrudeParam);
+                                Point3d stopExtruding_pt = pathModified.PointAt(stopExtrudeParam);
 
                                 
 
@@ -667,7 +673,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                                 pData[7] = new SMTPData(counter, 0, 0, MoveType.Lin, stopExtrudingPlane, 0.075f);
                                 pData[7].Events["Extrude"] = extrude;
-                                pData[7].AxisStates["E5"] = new SMT.AxisState(2.0);
+                                pData[7].AxisStates["E5"] = new SMT.AxisState(2.4);
 
                                 //allPlanes.Add(pathEnd);
                                 pDataList.Add(pData[7]);
@@ -933,7 +939,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
 
                                 pData[7] = new SMTPData(counter, 0, 0, MoveType.Lin, stopExtrudingPlane, 0.075f);
                                 pData[7].Events["Extrude"] = extrude;
-                                pData[7].AxisStates["E5"] = new SMT.AxisState(2.0);
+                                pData[7].AxisStates["E5"] = new SMT.AxisState(2.4);
 
                                 //allPlanes.Add(pathEnd);
                                 pDataList.Add(pData[7]);
@@ -1195,7 +1201,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                     Point3d TraversalPathEnd = new Point3d(pathStart.Origin.X, pathStart.Origin.Y, TraversalPath.Z);
                                     Plane TraversalPathEndPlane = new Plane(TraversalPathEnd, -Vector3d.XAxis, Vector3d.YAxis);
                                     pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, TraversalPathEndPlane, extrude, 3.0f);
-                                    pData[2].AxisStates["E5"] = new SMT.AxisState(1.0);
+                                    pData[2].AxisStates["E5"] = new SMT.AxisState(0.4);
                                     allPlanes.Add(TraversalPathEndPlane);
                                     pDataList.Add(pData[2]);
                                     counter++;
@@ -1223,9 +1229,9 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 counter++;
 
                             }
-                            int zHeight_test = 297;
+                            int zHeight_test = 301;
 
-                            if (pointOnCurve.Z < zHeight_test)
+                            if (pointOnCurve.Z > zHeight_test)
                             {
                                 // Loop through each plane in the list
                                 pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, cool, 3.0f);
