@@ -38,6 +38,7 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
             pManager.AddCurveParameter("pathCurves", "pC", " an array of Curves", GH_ParamAccess.list);
+            pManager.AddNumberParameter("Timeout", "T", "Timeout in seconds", GH_ParamAccess.item, 5);
         }
 
         /// <summary>
@@ -162,14 +163,16 @@ namespace Spatial_Rhino7.Spatial_Printing_Components
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             List<Curve> curves = new List<Curve>();
+            double calc_time = 5.0; // Default timeout value
             // Retrieve the input data
             if (!DA.GetDataList(0, curves)) return;
+            if (!DA.GetData(1, ref calc_time)) return;
 
             // Create the graph
             var graph = new GraphLongestTrail(curves);
 
             // Set a 5-second timeout
-            TimeSpan timeout = TimeSpan.FromSeconds(20);
+            TimeSpan timeout = TimeSpan.FromSeconds(calc_time);
 
             List<Line> longestTrail = graph.FindLongestTrail(timeout);
 

@@ -417,10 +417,12 @@ protected override void SolveInstance(IGH_DataAccess DA)
                        // List<Curve> segments = LineCheck.ExplodeCurves(pathCurves[j]);
 
                         //this will be used to make all the curves AnglesUp 
-                        if (pathCurves[j].PointAtStart.Z > pathCurves[j].PointAtEnd.Z)
+
+                        /*if (pathCurves[j].PointAtStart.Z > pathCurves[j].PointAtEnd.Z)
                         {
                             pathCurves[j].Reverse();
-                        }
+                        }*/
+
                         //get the planes for each path
                         int numCrvPathPlanes = 10;
                         List<Plane> crvPathPlanes = DivideCurveIntoPlanes(pathCurves[j], numCrvPathPlanes);
@@ -1111,7 +1113,7 @@ protected override void SolveInstance(IGH_DataAccess DA)
                                 Plane path = planeInterpolation[l];
                                     
                                 pData[2] = new SMTPData(counter, 0, 0, MoveType.Lin, planeInterpolation[l], 0.5f);
-                                pData[2].AxisValues["E5"] = 1.2;
+                                pData[2].AxisValues["E5"] = 1.4;
 
                                 printedPath.Add(pathCurves[j]);
                                 pDataList.Add(pData[2]);
@@ -1260,9 +1262,10 @@ protected override void SolveInstance(IGH_DataAccess DA)
                             else
                             {
                                 // Loop through each plane in the list
-                                // Loop through each plane in the list
                                 pData[3] = new SMTPData(counter, 0, 0, MoveType.Lin, pathStart, stopCooling, 0.5f);
                                 pData[3].Events["Extrude"] = extrude;
+                                pData[3].AxisValues["E5"] = 1.6;
+
                                 pDataList.Add(pData[3]);
                                 for (int l = 0; l < crvPathPlanes.Count; l++)
                                 {
